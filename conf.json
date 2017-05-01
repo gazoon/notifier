@@ -1,0 +1,21 @@
+{
+  "neo": {
+    "host": "localhost",
+    "port": 7657,
+    "user": "neo4j",
+    "password": "sudos",
+    "timeout": 1,
+    "pool_size": 8
+  },
+  "telegram": {
+    "api_token": "282857391:AAEEdYoGCEa-MzLMKXUABvSTaOLUSaSS53Y",
+    "bot_name": "PMNotifierBot",
+    "channel_size": 100,
+    "pull_timeout": 60,
+    "retry_delay": 3
+  },
+  "workers_num": 2,
+  "log_level": "DEBUG",
+  "service_name": "bot",
+  "server_id": "228"
+}
