@@ -12,7 +12,7 @@ var once = sync.Once{}
 
 type NeoClient neoDriver.DriverPool
 
-var DBInstance NeoClient
+var db neoDriver.DriverPool
 
 func Initialization() {
 	once.Do(func() {
@@ -21,8 +21,12 @@ func Initialization() {
 		if err != nil {
 			panic(errors.WithMessage(err, "cannot initialize neo instance"))
 		}
-		DBInstance = NeoClient(pool)
+		db = pool
 	})
+}
+
+func GetDB() neoDriver.DriverPool {
+	return db
 }
 
 func buildConnectionStr() string {

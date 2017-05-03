@@ -108,7 +108,6 @@ func Initialization() {
 
 func getLogger(ctx context.Context) *log.Entry {
 	return logging.FromContextAndBase(ctx, gLogger)
-
 }
 
 func SendText(ctx context.Context, chatID int, text string) {

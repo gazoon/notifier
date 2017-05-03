@@ -10,6 +10,7 @@ import (
 	"notifier/telegram"
 
 	log "github.com/Sirupsen/logrus"
+	"notifier/tracing"
 )
 
 const (
@@ -25,8 +26,15 @@ func Initialization(confPath string) {
 	telegram.Initialization()
 }
 
-func RunServer(confPath string) {
-	Initialization(confPath)
+func prepareContext() context.Context {
+	requestID := tracing.NewRequestID()
+	ctx := tracing.NewContext(context.Background(), requestID)
+	logger := logging.WithRequestID(requestID)
+	ctx = logging.NewContext(ctx, logger)
+	return ctx
+}
+
+func listenForMessages() {
 	wg := sync.WaitGroup{}
 	messages := telegram.MessagesChan
 	for i := 0; i < config.WorkersNum; i++ {
@@ -34,11 +42,16 @@ func RunServer(confPath string) {
 		go func() {
 			defer wg.Done()
 			for msg := range messages {
-				ctx := context.TODO()
+				ctx := prepareContext()
 				dispatchMessage(ctx, msg)
 			}
 		}()
 	}
-	log.Info("Successfully started")
 	wg.Wait()
+}
+
+func RunServer(confPath string) {
+	Initialization(confPath)
+	log.Info("Successfully started")
+	listenForMessages()
 }
