@@ -1,7 +1,7 @@
 {
   "neo": {
     "host": "localhost",
-    "port": 7657,
+    "port": 7687,
     "user": "neo4j",
     "password": "sudos",
     "timeout": 1,

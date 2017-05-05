@@ -1,36 +1,32 @@
 package neo
 
 import (
-	"fmt"
-	neoDriver "github.com/johnnadratowski/golang-neo4j-bolt-driver"
-	"github.com/pkg/errors"
 	"notifier/config"
 	"sync"
+
+	"github.com/pkg/errors"
 )
 
-var once = sync.Once{}
-
-type NeoClient neoDriver.DriverPool
-
-var db neoDriver.DriverPool
+var (
+	once = sync.Once{}
+	db   NeoClient
+)
 
 func Initialization() {
 	once.Do(func() {
-		connStr := buildConnectionStr()
-		pool, err := neoDriver.NewDriverPool(connStr, config.Neo.PoolSize)
+		var err error
+		db, err = NewClient(config.Neo.Host, config.Neo.Port, config.Neo.User, config.Neo.Password, config.Neo.Timeout,
+			config.Neo.PoolSize)
 		if err != nil {
-			panic(errors.WithMessage(err, "cannot initialize neo instance"))
+			panic(errors.WithMessage(err, "neo initialization failed"))
 		}
-		db = pool
 	})
 }
-
-func GetDB() neoDriver.DriverPool {
-	return db
+func GetDBConn() (NeoConn, error) {
+	conn, err := GetDB().GetConn()
+	return conn, err
 }
 
-func buildConnectionStr() string {
-	uri := fmt.Sprintf("bolt://%s:%s@%s:%d?timeout=%d", config.Neo.User, config.Neo.Password, config.Neo.Host,
-		config.Neo.Port, config.Neo.Timeout)
-	return uri
+func GetDB() NeoClient {
+	return db
 }
