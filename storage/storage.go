@@ -15,12 +15,12 @@ var (
 	gLogger = logging.WithPackage("storage")
 )
 
-func GetOrCreateChat(ctx context.Context, chat *models.Chat) error {
+func CreateChat(ctx context.Context, chat *models.Chat) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("chat_id", chat.ID).Info("Get or create chat")
+	logger.WithField("chat_id", chat.ID).Info("Creating the chat")
 	conn, err := neo.GetDBConn()
 	if err != nil {
-		return
+		return err
 	}
 	params := map[string]interface{}{"chat_id": chat.ID, "title": chat.Title}
 	err = conn.Exec(ctx, `MERGE (c: Chat {cid: {chat_id}) ON CREATE SET c.title={title}`, params)
@@ -65,7 +65,7 @@ func AddUserToChat(ctx context.Context, chatID, userID int) error {
 	return err
 }
 
-func GetOrCreateUser(ctx context.Context, user *models.User) error {
+func CreateUser(ctx context.Context, user *models.User) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("user_id", user.ID).Info("Get or create the user")
 	conn, err := neo.GetDBConn()
@@ -73,12 +73,12 @@ func GetOrCreateUser(ctx context.Context, user *models.User) error {
 		return err
 	}
 	params := map[string]interface{}{"user_id": user.ID, "name": user.Name, "pmid": user.PMID, "label": user.Name}
-	err = conn.Exec(ctx, `MERGE (u: User {uid: {user_id}}) ON CREATE SET u.name={name},u.pmid={pmid},lbls=[{label}]`,
+	err = conn.Exec(ctx, `MERGE (u: User {uid: {user_id}}) ON CREATE SET u.name={name},u.pmid={pmid},u.lbls=[{label}]`,
 		params)
 	return err
 }
 
-func AddLabelToUser(ctx context, userID int, label string) error {
+func AddLabelToUser(ctx context.Context, userID int, label string) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithFields(log.Fields{"user_id": userID, "label": label}).Info("Adding a new label to the user")
 	conn, err := neo.GetDBConn()
@@ -91,7 +91,7 @@ func AddLabelToUser(ctx context, userID int, label string) error {
 	return err
 }
 
-func RemoveLabelFromUser(ctx context, userID int, label string) error {
+func RemoveLabelFromUser(ctx context.Context, userID int, label string) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithFields(log.Fields{"user_id": userID, "label": label}).Info("Deleting user label")
 	conn, err := neo.GetDBConn()
@@ -104,7 +104,7 @@ func RemoveLabelFromUser(ctx context, userID int, label string) error {
 	return err
 }
 
-func GetUserLabels(ctx context, userID int) ([]string, error) {
+func GetUserLabels(ctx context.Context, userID int) ([]string, error) {
 	logger := logging.FromContextAndBase(ctx, gLogger).WithField("user_id", userID)
 	logger.Info("Extracting user labels")
 	conn, err := neo.GetDBConn()
@@ -122,26 +122,27 @@ func GetUserLabels(ctx context, userID int) ([]string, error) {
 	}
 	labels, err := rowToLabels(ctx, row)
 	if err != nil {
-		return errors.WithMessage(err, "cannot convert row to labels")
+		return nil, errors.WithMessage(err, "cannot convert row to labels")
 	}
 	return labels, nil
 }
 
-func FindUsersByLabel(ctx context, chatID int, label string) ([]*models.User, error) {
-	logger := logging.FromContextAndBase(ctx, gLogger).WithFields(log.Fields{"chat_id": chatID, "label": label})
+func FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.User, error) {
+	logger := logging.FromContextAndBase(ctx, gLogger).WithFields(log.Fields{"chat_id": chatID, "text": text})
 	logger.Info("Getting users in the chat by label")
 	conn, err := neo.GetDBConn()
 	if err != nil {
 		return nil, err
 	}
-	params := map[string]interface{}{"chat_id": chatID, "label": label}
+	params := map[string]interface{}{"chat_id": chatID, "text": text}
 	rows, err := conn.Query(ctx,
-		`MATCH (u: User)-[:Member]->(c:Chat {cid:{chat_id}}) WHERE {label} IN u.lbls RETURN u`, params)
+		`MATCH (u: User)-[:Member]->(c:Chat {cid:{chat_id}}) WHERE ANY(lbl IN u.lbls where {text} contains lbl) RETURN u`,
+		params)
 	var users []*models.User
 	if err != nil {
 		return nil, err
 	}
-	for row := range rows {
+	for _, row := range rows {
 		user, err := rowToUser(ctx, row)
 		if err != nil {
 			return nil, errors.WithMessage(err, "cannot convert row to User")

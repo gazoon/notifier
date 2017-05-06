@@ -9,6 +9,7 @@ import (
 	"context"
 	"notifier/telegram"
 
+	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"notifier/tracing"
 )
@@ -17,6 +18,11 @@ const (
 	addLabelCmd    = "addLabel"
 	removeLabelCmd = "removeLabel"
 	showLabelsCmd  = "showLabels"
+)
+
+var (
+	CommandsText = fmt.Sprintf(`Hi! I can do following for you:\n%s - Add new label for further notifications.\n`+
+		`%s - Delete label with provided name.\n%s - Show all your labels.`, addLabelCmd, removeLabelCmd, showLabelsCmd)
 )
 
 func Initialization(confPath string) {
