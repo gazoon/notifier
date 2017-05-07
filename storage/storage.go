@@ -122,7 +122,7 @@ func GetUserLabels(ctx context.Context, userID int) ([]string, error) {
 	}
 	labels, err := rowToLabels(ctx, row)
 	if err != nil {
-		return nil, errors.WithMessage(err, "cannot convert row to labels")
+		return nil, errors.Wrap(err, "cannot convert row to labels")
 	}
 	return labels, nil
 }
@@ -145,7 +145,7 @@ func FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.U
 	for _, row := range rows {
 		user, err := rowToUser(ctx, row)
 		if err != nil {
-			return nil, errors.WithMessage(err, "cannot convert row to User")
+			return nil, errors.Wrap(err, "cannot convert row to User")
 		}
 		users = append(users, user)
 	}

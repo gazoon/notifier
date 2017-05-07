@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"notifier/config"
 	"notifier/logging"
 	"notifier/models"
 	"notifier/storage"
@@ -17,24 +16,22 @@ func dispatchMessage(ctx context.Context, msg *models.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("receved_msg", msg).Info("Dispatching a message")
 	if !msg.Chat.IsPrivate {
+		if msg.IsBotAdded {
+			createChat(ctx, msg.Chat)
+			return
+		}
 		if msg.NewChatMember != nil {
-			if msg.NewChatMember.Username == config.Telegram.BotName {
-				createChat(ctx, msg.Chat)
-				return
-			}
 			addChatMember(ctx, msg.Chat, msg.NewChatMember.ID)
 			return
 		}
-
+		if msg.IsBotLeft {
+			deleteChat(ctx, msg.Chat.ID)
+			return
+		}
 		if msg.LeftChatMember != nil {
-			if msg.LeftChatMember.Username == config.Telegram.BotName {
-				deleteChat(ctx, msg.Chat.ID)
-				return
-			}
 			removeChatMember(ctx, msg.Chat, msg.LeftChatMember.ID)
 			return
 		}
-
 		if msg.Text != "" {
 			regularMessage(ctx, msg)
 			return

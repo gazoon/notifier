@@ -15,10 +15,12 @@ var (
 func Initialization() {
 	once.Do(func() {
 		var err error
-		db, err = NewClient(config.Neo.Host, config.Neo.Port, config.Neo.User, config.Neo.Password, config.Neo.Timeout,
-			config.Neo.PoolSize)
+		neoConf := config.GetInstance().Neo
+		gLogger.Info("Initializing neo instance")
+		db, err = NewClient(neoConf.Host, neoConf.Port, neoConf.User, neoConf.Password, neoConf.Timeout,
+			neoConf.PoolSize)
 		if err != nil {
-			panic(errors.WithMessage(err, "neo initialization failed"))
+			panic(errors.Wrap(err, "neo initialization failed"))
 		}
 	})
 }

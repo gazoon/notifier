@@ -7,11 +7,13 @@ import (
 	"sync"
 
 	"context"
-	"notifier/telegram"
-
 	"fmt"
-	log "github.com/Sirupsen/logrus"
+	"notifier/incoming"
+	"notifier/sender"
 	"notifier/tracing"
+
+	"notifier/models"
+	"notifier/polling"
 )
 
 const (
@@ -27,13 +29,14 @@ var (
 
 func Initialization(confPath string) {
 	config.Initialization(confPath)
-	neo.Initialization()
 	logging.Initialization()
-	telegram.Initialization()
+	neo.Initialization()
+	incomming.Initialization()
+	sender.Initialization()
 }
 
-func prepareContext() context.Context {
-	requestID := tracing.NewRequestID()
+func prepareContext(msg *models.Message) context.Context {
+	requestID := msg.RequestID
 	ctx := tracing.NewContext(context.Background(), requestID)
 	logger := logging.WithRequestID(requestID)
 	ctx = logging.NewContext(ctx, logger)
@@ -42,14 +45,18 @@ func prepareContext() context.Context {
 
 func listenForMessages() {
 	wg := sync.WaitGroup{}
-	messages := telegram.MessagesChan
-	for i := 0; i < config.WorkersNum; i++ {
+	conf := config.GetInstance()
+	queue := incomming.GetQueue()
+	for i := 0; i < conf.WorkersNum; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for msg := range messages {
-				ctx := prepareContext()
+			for {
+				queueMsg := queue.GetNext()
+				msg := queueMsg.Payload()
+				ctx := prepareContext(msg)
 				dispatchMessage(ctx, msg)
+				queueMsg.Ack()
 			}
 		}()
 	}
@@ -58,6 +65,8 @@ func listenForMessages() {
 
 func RunServer(confPath string) {
 	Initialization(confPath)
-	log.Info("Successfully started")
+	gLogger.Info("Successfully started")
+	poller:=polling.TelegramPoller{}
+	poller.Start()
 	listenForMessages()
 }

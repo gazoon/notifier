@@ -7,14 +7,21 @@
     "timeout": 1,
     "pool_size": 8
   },
-  "telegram": {
-    "api_token": "282857391:AAEEdYoGCEa-MzLMKXUABvSTaOLUSaSS53Y",
-    "bot_name": "PMNotifierBot",
+  "telegram_polling": {
     "channel_size": 100,
-    "pull_timeout": 60,
+    "poll_timeout": 60,
     "retry_delay": 3
   },
-  "workers_num": 2,
+  "telegram": {
+    "api_token": "282857391:AAEEdYoGCEa-MzLMKXUABvSTaOLUSaSS53Y",
+    "bot_name": "PMNotifierBot"
+  },
+  "telegram_sender": {
+    "http_timeout": 2,
+    "retries": 3
+  },
+  "workers_num": 1,
+  "incoming_queue_size": 1000,
   "log_level": "DEBUG",
   "service_name": "bot",
   "server_id": "228"

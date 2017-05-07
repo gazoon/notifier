@@ -33,7 +33,7 @@ type connection struct {
 func (c *client) GetConn() (NeoConn, error) {
 	underlingConn, err := c.driver.OpenPool()
 	if err != nil {
-		return nil, errors.WithMessage(err, "cannot get connection from pool")
+		return nil, errors.Wrap(err, "cannot get connection from pool")
 	}
 	conn := &connection{underlingConn}
 	return conn, err
@@ -44,7 +44,7 @@ func (c *connection) Query(ctx context.Context, query string, params map[string]
 	logger.WithField("query", query).Debug("Quering")
 	rows, _, _, err := c.conn.QueryNeoAll(query, params)
 	if err != nil {
-		return nil, errors.WithMessage(err, "query failed")
+		return nil, errors.Wrap(err, "query failed")
 	}
 	return rows, nil
 }
@@ -65,7 +65,7 @@ func (c *connection) Exec(ctx context.Context, query string, params map[string]i
 	logger.WithField("query", query).Debug("Executing")
 	_, err := c.conn.ExecNeo(query, params)
 	if err != nil {
-		return errors.WithMessage(err, "execution failed")
+		return errors.Wrap(err, "execution failed")
 	}
 	return nil
 }
@@ -77,7 +77,7 @@ func buildConnectionStr(host string, port int, user, password string, timeout in
 
 func NewClient(host string, port int, user, password string, timeout, poolSize int) (NeoClient, error) {
 	connStr := buildConnectionStr(host, port, user, password, timeout)
-	gLogger.WithField("url", connStr).Info("Connecting to neo")
+	gLogger.WithField("url", connStr).Info("Connecting to neo4j")
 	pool, err := neoDriver.NewDriverPool(connStr, poolSize)
 	if err == nil {
 		var conn neoDriver.Conn
@@ -87,7 +87,7 @@ func NewClient(host string, port int, user, password string, timeout, poolSize i
 		}
 	}
 	if err != nil {
-		return nil, errors.WithMessage(err, "cannot create driver")
+		return nil, errors.Wrap(err, "cannot create driver")
 	}
 	return &client{pool}, nil
 }

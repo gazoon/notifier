@@ -6,11 +6,14 @@ import (
 
 type Message struct {
 	ID             int
+	RequestID      string
 	Chat           *Chat
 	Text           string
 	From           *User
 	NewChatMember  *User
 	LeftChatMember *User
+	IsBotLeft      bool
+	IsBotAdded     bool
 }
 
 func (m *Message) ToCommand() (string, string) {

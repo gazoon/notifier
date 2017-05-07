@@ -33,6 +33,11 @@ func WithRequestID(requestID string) *log.Entry {
 	return log.WithField(RequestIDField, requestID)
 }
 
+func WithRequestIDAndBase(requestID string, base *log.Entry) *log.Entry {
+	requestLogger := WithRequestID(requestID)
+	return base.WithFields(requestLogger.Data)
+}
+
 func (cf *customFormatter) Format(e *log.Entry) ([]byte, error) {
 	for field, value := range cf.additionalFields {
 		e.Data[field] = value
@@ -57,9 +62,17 @@ func NewContext(ctx context.Context, logger *log.Entry) context.Context {
 	return context.WithValue(ctx, loggerCtxKey, logger)
 }
 
-func Initialization() {
+func NewFormatter(serviceName, serverID string) log.Formatter {
+	formatter := &customFormatter{logFormatter: &log.TextFormatter{}, additionalFields: log.Fields{
+		ServiceNameField: serviceName,
+		ServerIDField:    serverID,
+	}}
+	return formatter
+}
+
+func getLogLevel(logLevelName string) log.Level {
 	var logLevel log.Level
-	switch strings.ToLower(config.LogLevel) {
+	switch strings.ToLower(logLevelName) {
 	case "debug":
 		logLevel = log.DebugLevel
 	case "info":
@@ -71,10 +84,13 @@ func Initialization() {
 	default:
 		logLevel = log.DebugLevel
 	}
-	formatter := &customFormatter{logFormatter: &log.TextFormatter{}, additionalFields: log.Fields{
-		ServiceNameField: config.ServiceName,
-		ServerIDField:    config.ServerID,
-	}}
+	return logLevel
+}
+
+func Initialization() {
+	conf := config.GetInstance()
+	logLevel := getLogLevel(conf.LogLevel)
+	formatter := NewFormatter(conf.ServiceName, conf.ServerID)
 	log.SetLevel(logLevel)
 	log.SetFormatter(formatter)
 }
