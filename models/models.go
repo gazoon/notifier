@@ -1,6 +1,8 @@
 package models
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 )
 
@@ -14,6 +16,18 @@ type Message struct {
 	LeftChatMember *User
 	IsBotLeft      bool
 	IsBotAdded     bool
+}
+
+func toString(model interface{}) string {
+	b, err := json.Marshal(model)
+	if err != nil {
+		return fmt.Sprintf("cannot represent as json: %s", err)
+	}
+	return string(b)
+}
+
+func (m Message) String() string {
+	return toString(&m)
 }
 
 func (m *Message) ToCommand() (string, string) {
@@ -33,9 +47,17 @@ type Chat struct {
 	Title     string
 }
 
+func (c Chat) String() string {
+	return toString(&c)
+}
+
 type User struct {
 	ID       int
 	PMID     int
 	Username string
 	Name     string
+}
+
+func (u User) String() string {
+	return toString(&u)
 }

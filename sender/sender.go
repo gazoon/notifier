@@ -16,9 +16,9 @@ var (
 )
 
 type Sender interface {
-	SendText(ctx context.Context, chatID int, text string)
-	SendForward(ctx context.Context, toChatID, fromChatID, msgID int)
-	SendForwardWithText(ctx context.Context, toChatID, fromChatID, msgID int, text string)
+	SendText(ctx context.Context, chatID int, text string) error
+	SendForward(ctx context.Context, toChatID, fromChatID, msgID int) error
+	SendForwardWithText(ctx context.Context, toChatID, fromChatID, msgID int, text string) error
 }
 
 type telegramSender struct {
@@ -34,29 +34,32 @@ func NewTelegramSender(apiToken string, httpTimeout int) (Sender, error) {
 	return &telegramSender{bot}, nil
 }
 
-func (ts *telegramSender) SendText(ctx context.Context, chatID int, text string) {
+func (ts *telegramSender) SendText(ctx context.Context, chatID int, text string) error {
 	logger := logging.FromContextAndBase(ctx, gLogger).WithFields(log.Fields{"chat_id": chatID, "text": text})
 	msg := tgbotapi.NewMessage(int64(chatID), text)
 	logger.Debug("Sending text to the chat")
 	_, err := ts.bot.Send(msg)
 	if err != nil {
-		logger.Errorf("Cannot send text to telegram API: %s", err)
-		return
+		return errors.Wrap(err, "cannot send text to telegram API")
 	}
+	return nil
 }
 
-func (ts *telegramSender) SendForward(ctx context.Context, toChatID, fromChatID, msgID int) {
+func (ts *telegramSender) SendForward(ctx context.Context, toChatID, fromChatID, msgID int) error {
 	logger := logging.FromContextAndBase(ctx, gLogger).WithField("msg_id", msgID)
 	forward := tgbotapi.NewForward(int64(toChatID), int64(fromChatID), msgID)
 	logger.Debug("Forwarding msg to the chat")
 	_, err := ts.bot.Send(forward)
 	if err != nil {
-		logger.Errorf("Cannot forward msg to telegram API: %s", err)
-		return
+		return errors.Wrap(err, "cannot forward msg to telegram API")
 	}
+	return nil
 }
 
-func (ts *telegramSender) SendForwardWithText(ctx context.Context, toChatID, fromChatID, msgID int, text string) {
-	ts.SendText(ctx, toChatID, text)
-	ts.SendForward(ctx, toChatID, fromChatID, msgID)
+func (ts *telegramSender) SendForwardWithText(ctx context.Context, toChatID, fromChatID, msgID int, text string) error {
+	err := ts.SendText(ctx, toChatID, text)
+	if err != nil {
+		return err
+	}
+	return ts.SendForward(ctx, toChatID, fromChatID, msgID)
 }

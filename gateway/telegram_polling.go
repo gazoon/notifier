@@ -1,15 +1,15 @@
-package polling
+package gateway
 
 import (
 	"notifier/config"
-	"sync"
-
 	"notifier/logging"
 	"notifier/models"
 	"time"
 
 	"notifier/incoming"
 	"notifier/tracing"
+
+	"context"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/pkg/errors"
@@ -42,87 +42,90 @@ func userIsBot(u *tgbotapi.User) bool {
 	return u.UserName == conf.Telegram.BotName
 }
 
-func updateToMessage(update *tgbotapi.Update) (*models.Message, error) {
-	if update.Message == nil {
-		return nil, errors.New("update without message")
-	}
-	if update.Message.Chat == nil {
+func updateMessageToModel(updateMessage *tgbotapi.Message) (*models.Message, error) {
+	if updateMessage.Chat == nil {
 		return nil, errors.New("message without chat")
 	}
-	if update.Message.From == nil {
+	if updateMessage.From == nil {
 		return nil, errors.New("message without from")
 	}
-	chatID := int(update.Message.Chat.ID)
+	chatID := int(updateMessage.Chat.ID)
 	message := &models.Message{
-		ID:   update.Message.MessageID,
-		Text: update.Message.Text,
+		ID:   updateMessage.MessageID,
+		Text: updateMessage.Text,
 		Chat: &models.Chat{
 			ID:        chatID,
-			IsPrivate: update.Message.Chat.IsPrivate(),
-			Title:     update.Message.Chat.Title,
+			IsPrivate: updateMessage.Chat.IsPrivate(),
+			Title:     updateMessage.Chat.Title,
 		},
-		From:       transformUser(update.Message.From),
-		IsBotAdded: userIsBot(update.Message.NewChatMember),
-		IsBotLeft:  userIsBot(update.Message.LeftChatMember),
+		From:       transformUser(updateMessage.From),
+		IsBotAdded: userIsBot(updateMessage.NewChatMember),
+		IsBotLeft:  userIsBot(updateMessage.LeftChatMember),
 	}
 	if !message.IsBotAdded {
-		message.NewChatMember = transformUser(update.Message.NewChatMember)
+		message.NewChatMember = transformUser(updateMessage.NewChatMember)
 	}
 	if !message.IsBotLeft {
-		message.LeftChatMember = transformUser(update.Message.LeftChatMember)
+		message.LeftChatMember = transformUser(updateMessage.LeftChatMember)
 	}
-	if update.Message.Chat.IsPrivate() {
+	if updateMessage.Chat.IsPrivate() {
 		message.From.PMID = chatID
 	}
 	return message, nil
 
 }
 
-func sendUpdate(update *tgbotapi.Update) {
+func prepareContext(requestID string) context.Context {
+	logger := logging.WithRequestID(requestID)
+	ctx := logging.NewContext(context.Background(), logger)
+	return ctx
+}
+
+type TelegramPoller struct {
+	queue incomming.Producer
+}
+
+func NewTelegramPoller(queue incomming.Producer) *TelegramPoller {
+	return &TelegramPoller{queue}
+}
+
+func (tp *TelegramPoller) processUpdate(update *tgbotapi.Update) {
 	requestID := tracing.NewRequestID()
-	logger := logging.WithRequestIDAndBase(requestID, gLogger)
-	msg, err := updateToMessage(update)
+	ctx := prepareContext(requestID)
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	if update.Message == nil {
+		logger.Debugf("Skip update without the Message field: %+v", update)
+		return
+	}
+	msg, err := updateMessageToModel(update.Message)
 	if err != nil {
-		logger.Errorf("Cannot transform telegram update to message: %s", err)
+		logger.Warnf("Cannot transform telegram update %+v to message: %s", update, err)
 		return
 	}
 	msg.RequestID = requestID
-	queue := incomming.GetQueue()
-	err = queue.Put(msg)
+	logger.WithField("msg", msg).Info("Put a new msg in the incoming queue")
+	err = tp.queue.Put(ctx, msg)
 	if err != nil {
 		logger.Errorf("Cannot put incoming msg: %s", err)
 		return
 	}
 }
 
-type TelegramPoller struct {
-	wg        sync.WaitGroup
-	isStopped bool
-}
-
 func (tp *TelegramPoller) Start() error {
-	if tp.isStopped {
-		return errors.New("poller is stopped")
-	}
 	conf := config.GetInstance()
 	bot, err := tgbotapi.NewBotAPI(conf.Telegram.APIToken)
 	if err != nil {
 		return errors.Wrap(err, "telegram api initialization failed")
 	}
-	tp.wg.Add(1)
 	gLogger.Info("Starting polling for updates")
 	retryDelay := conf.TelegramPolling.RetryDelay
 	updatesConf := tgbotapi.UpdateConfig{Timeout: conf.TelegramPolling.PollTimeout}
 	go func() {
-		defer tp.wg.Done()
 		for {
-			if tp.isStopped {
-				return
-			}
 			gLogger.Debug("Requesting new updates from API")
 			updates, err := bot.GetUpdates(updatesConf)
 			if err != nil {
-				gLogger.Errorf("Failed to get updates: %s retrying in %d seconds...", err, retryDelay)
+				gLogger.Warnf("Failed to get updates: %s retrying in %d seconds...", err, retryDelay)
 				time.Sleep(time.Second * time.Duration(retryDelay))
 				continue
 			}
@@ -130,16 +133,10 @@ func (tp *TelegramPoller) Start() error {
 				update := &updates[i]
 				if update.UpdateID >= updatesConf.Offset {
 					updatesConf.Offset = update.UpdateID + 1
-					sendUpdate(update)
+					tp.processUpdate(update)
 				}
 			}
 		}
 	}()
 	return nil
-}
-
-func (tp *TelegramPoller) Stop() {
-	tp.isStopped = true
-	gLogger.Info("Stoping polling telegram API")
-	tp.wg.Wait()
 }

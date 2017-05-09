@@ -1,7 +1,6 @@
 package logging
 
 import (
-	"notifier/config"
 	"strings"
 
 	"context"
@@ -87,10 +86,9 @@ func getLogLevel(logLevelName string) log.Level {
 	return logLevel
 }
 
-func Initialization() {
-	conf := config.GetInstance()
-	logLevel := getLogLevel(conf.LogLevel)
-	formatter := NewFormatter(conf.ServiceName, conf.ServerID)
+func PatchStdLog(logLevelName, serviceName, serverID string) {
+	logLevel := getLogLevel(logLevelName)
+	formatter := NewFormatter(serviceName, serverID)
 	log.SetLevel(logLevel)
 	log.SetFormatter(formatter)
 }
