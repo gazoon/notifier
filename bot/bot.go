@@ -27,7 +27,8 @@ var (
 	commandsText = fmt.Sprintf(`Hi! I can do following for you:\n%s - Add new label for further notifications.\n`+
 		`%s - Delete label with provided name.\n%s - Show all your labels.`, addLabelCmd, removeLabelCmd, showLabelsCmd)
 	notificationTextTemplate = `%s, you've been mentioned in the %s:`
-	errorText                = `An internal bot error occurred`
+	errorText                = `An internal bot error occurred.`
+	noLabelsText             = `You don't have any labels yet.`
 )
 
 type Bot struct {
@@ -58,7 +59,7 @@ func (b *Bot) Start() {
 		go func() {
 			defer b.wg.Done()
 			for {
-				gLogger.Debug("Fetching new msg from incoming queue")
+				gLogger.Info("Fetching new msg from incoming queue")
 				queueMsg, ok := b.queue.GetNext()
 				if !ok {
 					return
@@ -177,12 +178,28 @@ func (b *Bot) sendErrorMsg(ctx context.Context, user *models.User) {
 	}
 }
 
+func (b *Bot) sendUserLabels(ctx context.Context, user *models.User, labels []string) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	var labelsText string
+	if len(labels) != 0 {
+		labelsText = strings.Join(labels, "\n")
+	} else {
+		labelsText = noLabelsText
+	}
+	logger.WithField("labels_text", labelsText).Info("Sending labels to the user")
+	err := b.sender.SendText(ctx, user.PMID, labelsText)
+	if err != nil {
+		logger.Errorf("Cannot send list of user labels: %s", err)
+		return
+	}
+}
+
 func (b *Bot) commandsListHandler(ctx context.Context, user *models.User) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
 	b.createUser(ctx, user)
 
-	logger.Info("Sending the list of commands")
+	logger.WithField("user_id", user.ID).Info("Sending the list of commands")
 	err := b.sender.SendText(ctx, user.PMID, commandsText)
 	if err != nil {
 		logger.Errorf("cannot send commands to the user: %s", err)
@@ -246,13 +263,16 @@ func (b *Bot) addUserLabelHandler(ctx context.Context, user *models.User, label 
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	label = processText(label)
 
-	if b.createUser(ctx, user) {
-
+	if !b.createUser(ctx, user) {
+		b.sendErrorMsg(ctx, user)
+		return
 	}
 
-	err = b.storage.AddLabelToUser(ctx, user.ID, label)
+	logger.WithFields(log.Fields{"label": label, "user_id": user.ID}).Info("Saving new user label in the storage")
+	err := b.storage.AddLabelToUser(ctx, user.ID, label)
 	if err != nil {
-		logger.Error(err)
+		logger.Errorf("Cannot save user label: %s", err)
+		b.sendErrorMsg(ctx, user)
 		return
 	}
 }
@@ -261,15 +281,16 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, user *models.User, lab
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	label = processText(label)
 
-	err := b.storage.CreateUser(ctx, user)
-	if err != nil {
-		logger.Error(err)
+	if !b.createUser(ctx, user) {
+		b.sendErrorMsg(ctx, user)
 		return
 	}
 
-	err = b.storage.RemoveLabelFromUser(ctx, user.ID, label)
+	logger.WithFields(log.Fields{"label": label, "user_id": user.ID}).Info("Discarding user label from the storage")
+	err := b.storage.RemoveLabelFromUser(ctx, user.ID, label)
 	if err != nil {
-		logger.Error(err)
+		logger.Errorf("Removing user label from the storage failed: %s", err)
+		b.sendErrorMsg(ctx, user)
 		return
 	}
 }
@@ -277,19 +298,20 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, user *models.User, lab
 func (b *Bot) showUserLabelsHandler(ctx context.Context, user *models.User) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
-	err := b.storage.CreateUser(ctx, user)
-	if err != nil {
-		logger.Error(err)
+	if !b.createUser(ctx, user) {
+		b.sendErrorMsg(ctx, user)
 		return
 	}
 
+	logger.WithField("user_id", user.ID).Info("Get user labels from the storage")
 	labels, err := b.storage.GetUserLabels(ctx, user.ID)
 	if err != nil {
-		logger.Error(err)
+		logger.Errorf("Cannot fetch a list of user labels from storage: %s", err)
+		b.sendErrorMsg(ctx, user)
 		return
 	}
 
-	logger.Info(labels)
+	b.sendUserLabels(ctx, user, labels)
 }
 
 func processText(text string) string {

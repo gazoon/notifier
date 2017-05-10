@@ -8,7 +8,6 @@ import (
 
 	"database/sql"
 
-	log "github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
 )
 

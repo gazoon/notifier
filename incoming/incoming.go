@@ -60,7 +60,7 @@ func (mq *InMemoryQueue) Put(ctx context.Context, msg *models.Message) error {
 	mq.mx.Lock()
 	defer mq.mx.Unlock()
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.Debug("Append msg to the tail of the list")
+	logger.Info("Append msg to the tail of the list")
 	mq.storage = append(mq.storage, msg)
 	return nil
 }
