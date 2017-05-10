@@ -36,8 +36,6 @@ func NewNeoStorage(neoClient neo.Client) Storage {
 }
 
 func (ns *neoStorage) CreateChat(ctx context.Context, chat *models.Chat) error {
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("chat_id", chat.ID).Info("Creating the chat")
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -49,8 +47,6 @@ func (ns *neoStorage) CreateChat(ctx context.Context, chat *models.Chat) error {
 }
 
 func (ns *neoStorage) DeleteChat(ctx context.Context, chatID int) error {
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("chat_id", chatID).Info("Deleting the chat")
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -62,8 +58,6 @@ func (ns *neoStorage) DeleteChat(ctx context.Context, chatID int) error {
 }
 
 func (ns *neoStorage) RemoveUserFromChat(ctx context.Context, chatID, userID int) error {
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithFields(log.Fields{"chat_id": chatID, "user_id": userID}).Info("Removing a user from chat")
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -76,8 +70,6 @@ func (ns *neoStorage) RemoveUserFromChat(ctx context.Context, chatID, userID int
 }
 
 func (ns *neoStorage) AddUserToChat(ctx context.Context, chatID, userID int) error {
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithFields(log.Fields{"chat_id": chatID, "user_id": userID}).Info("Adding a user to the chat")
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -90,8 +82,6 @@ func (ns *neoStorage) AddUserToChat(ctx context.Context, chatID, userID int) err
 }
 
 func (ns *neoStorage) CreateUser(ctx context.Context, user *models.User) error {
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("user_id", user.ID).Info("Get or create the user")
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -104,8 +94,6 @@ func (ns *neoStorage) CreateUser(ctx context.Context, user *models.User) error {
 }
 
 func (ns *neoStorage) AddLabelToUser(ctx context.Context, userID int, label string) error {
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithFields(log.Fields{"user_id": userID, "label": label}).Info("Adding a new label to the user")
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -118,8 +106,6 @@ func (ns *neoStorage) AddLabelToUser(ctx context.Context, userID int, label stri
 }
 
 func (ns *neoStorage) RemoveLabelFromUser(ctx context.Context, userID int, label string) error {
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithFields(log.Fields{"user_id": userID, "label": label}).Info("Deleting user label")
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -132,8 +118,6 @@ func (ns *neoStorage) RemoveLabelFromUser(ctx context.Context, userID int, label
 }
 
 func (ns *neoStorage) GetUserLabels(ctx context.Context, userID int) ([]string, error) {
-	logger := logging.FromContextAndBase(ctx, gLogger).WithField("user_id", userID)
-	logger.Info("Extracting user labels")
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return nil, err
@@ -143,6 +127,7 @@ func (ns *neoStorage) GetUserLabels(ctx context.Context, userID int) ([]string, 
 	row, err := conn.QueryOne(ctx, `MATCH (u: User {uid: {user_id}}) RETURN u.lbls`, params)
 	if err != nil {
 		if err == sql.ErrNoRows {
+			logger := logging.FromContextAndBase(ctx, gLogger).WithField("user_id", userID)
 			logger.Warn("User not found, return empty list of labels")
 			return nil, nil
 		}
@@ -156,8 +141,6 @@ func (ns *neoStorage) GetUserLabels(ctx context.Context, userID int) ([]string, 
 }
 
 func (ns *neoStorage) FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.User, error) {
-	logger := logging.FromContextAndBase(ctx, gLogger).WithFields(log.Fields{"chat_id": chatID, "text": text})
-	logger.Info("Getting users in the chat by label")
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return nil, err
