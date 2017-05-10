@@ -1,18 +1,19 @@
 package core
 
 import (
-	"github.com/pkg/errors"
 	"notifier/bot"
 	"notifier/config"
 	"notifier/gateway"
 	"notifier/incoming"
 	"notifier/logging"
+	"notifier/messenger"
 	"notifier/neo"
-	"notifier/sender"
 	"notifier/storage"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/pkg/errors"
 )
 
 var (
@@ -36,13 +37,13 @@ func Run(confPath string) {
 	if err != nil {
 		panic(errors.Wrap(err, "cannot create neo client"))
 	}
-	gLogger.Info("Initializing messages sender")
-	msgsSender, err := sender.NewTelegramSender(conf.Telegram.APIToken, conf.TelegramSender.HttpTimeout)
+	gLogger.Info("Initializing messenger API")
+	telegramMessenger, err := messenger.NewTelegram(conf.Telegram.APIToken, conf.TelegramSender.HttpTimeout)
 	if err != nil {
 		panic(errors.Wrap(err, "cannot create neo client"))
 	}
 	dataStorage := storage.NewNeoStorage(neoDB)
-	botService := bot.New(incomingQueue, neoDB, msgsSender, dataStorage)
+	botService := bot.New(incomingQueue, neoDB, telegramMessenger, dataStorage)
 	pollerService := gateway.NewTelegramPoller(incomingQueue)
 	gLogger.Info("Starting bot service")
 	botService.Start()

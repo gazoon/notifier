@@ -3,17 +3,18 @@ package bot
 import (
 	"context"
 	"fmt"
-	log "github.com/Sirupsen/logrus"
 	"notifier/config"
 	"notifier/incoming"
 	"notifier/logging"
+	"notifier/messenger"
 	"notifier/models"
 	"notifier/neo"
-	"notifier/sender"
 	"notifier/storage"
 	"notifier/tracing"
 	"strings"
 	"sync"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 const (
@@ -32,15 +33,15 @@ var (
 )
 
 type Bot struct {
-	queue   incomming.Consumer
-	neoDB   neo.Client
-	sender  sender.Sender
-	storage storage.Storage
-	wg      sync.WaitGroup
+	queue     incomming.Consumer
+	neoDB     neo.Client
+	messenger messenger.Messenger
+	storage   storage.Storage
+	wg        sync.WaitGroup
 }
 
-func New(queue incomming.Consumer, neoDB neo.Client, sender sender.Sender, storage storage.Storage) *Bot {
-	return &Bot{queue: queue, neoDB: neoDB, sender: sender, storage: storage}
+func New(queue incomming.Consumer, neoDB neo.Client, sender messenger.Messenger, storage storage.Storage) *Bot {
+	return &Bot{queue: queue, neoDB: neoDB, messenger: sender, storage: storage}
 }
 
 func prepareContext(msg *models.Message) context.Context {
@@ -160,7 +161,7 @@ func (b *Bot) notifyUsers(ctx context.Context, users []*models.User, msg *models
 	for _, user := range users {
 		notificationText := fmt.Sprintf(notificationTextTemplate, user.Name, msg.Chat.Title)
 		logger.WithField("user", user).Info("Sending notification to the user")
-		err := b.sender.SendForwardWithText(ctx, user.PMID, msg.Chat.ID, msg.ID, notificationText)
+		err := b.messenger.SendForwardWithText(ctx, user.PMID, msg.Chat.ID, msg.ID, notificationText)
 		if err != nil {
 			logger.Errorf("Cannot notify user: %s", err)
 			continue
@@ -171,7 +172,7 @@ func (b *Bot) notifyUsers(ctx context.Context, users []*models.User, msg *models
 func (b *Bot) sendErrorMsg(ctx context.Context, user *models.User) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("user", user).Info("Sending error msg to the user")
-	err := b.sender.SendText(ctx, user.PMID, errorText)
+	err := b.messenger.SendText(ctx, user.PMID, errorText)
 	if err != nil {
 		logger.Errorf("Cannot send error msg: %s", err)
 		return
@@ -187,11 +188,36 @@ func (b *Bot) sendUserLabels(ctx context.Context, user *models.User, labels []st
 		labelsText = noLabelsText
 	}
 	logger.WithField("labels_text", labelsText).Info("Sending labels to the user")
-	err := b.sender.SendText(ctx, user.PMID, labelsText)
+	err := b.messenger.SendText(ctx, user.PMID, labelsText)
 	if err != nil {
 		logger.Errorf("Cannot send list of user labels: %s", err)
 		return
 	}
+}
+
+func (b *Bot) filterNotChatUsers(ctx context.Context, users []*models.User, chat *models.Chat) []*models.User {
+	logger := logging.FromContextAndBase(ctx, gLogger).WithField("chat_id", chat.ID)
+	var filteredUsers []*models.User
+	for _, user := range users {
+		userLogger := logger.WithField("user_id", user.ID)
+		userLogger.Info("Check in the messenger whether the user is still in the chat")
+		isInChat, err := b.messenger.IsUserInChat(ctx, user.ID, chat.ID)
+		if err != nil {
+			userLogger.Errorf("Cannot get info about the user in the chat from the messenger: %s", err)
+			continue
+		}
+		if isInChat {
+			filteredUsers = append(filteredUsers, user)
+			continue
+		}
+		userLogger.Info("The user is no longer in the chat, discarding from the storage")
+		err = b.storage.RemoveUserFromChat(ctx, chat.ID, user.ID)
+		if err != nil {
+			userLogger.Errorf("Cannot remove not actual user-chat relation from the storage: %s", err)
+			continue
+		}
+	}
+	return filteredUsers
 }
 
 func (b *Bot) commandsListHandler(ctx context.Context, user *models.User) {
@@ -200,7 +226,7 @@ func (b *Bot) commandsListHandler(ctx context.Context, user *models.User) {
 	b.createUser(ctx, user)
 
 	logger.WithField("user_id", user.ID).Info("Sending the list of commands")
-	err := b.sender.SendText(ctx, user.PMID, commandsText)
+	err := b.messenger.SendText(ctx, user.PMID, commandsText)
 	if err != nil {
 		logger.Errorf("cannot send commands to the user: %s", err)
 	}
@@ -223,6 +249,7 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 		return
 	}
 
+	users = b.filterNotChatUsers(ctx, users, msg.Chat)
 	b.notifyUsers(ctx, users, msg)
 }
 
