@@ -34,6 +34,7 @@ var (
 	okText                     = "OK."
 )
 
+type Handler func(ctx context.Context, msg *models.Message)
 type Bot struct {
 	queue     incomming.Consumer
 	neoDB     neo.Client
@@ -88,41 +89,49 @@ func (b *Bot) Stop() {
 }
 
 func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {
-	//logger := logging.FromContextAndBase(ctx, gLogger)
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	var handlerFunc Handler
+	var handlerName string
 	if !msg.Chat.IsPrivate {
-		if msg.IsBotAdded {
-			b.createChatHandler(ctx, msg.Chat)
+		switch {
+		case msg.IsBotAdded:
+			handlerFunc = b.createChatHandler
+			handlerName = "createChat"
+		case msg.NewChatMember != nil:
+			handlerFunc = b.addChatMemberHandler
+			handlerName = "addChatMember"
+		case msg.IsBotLeft:
+			handlerFunc = b.deleteChatHandler
+			handlerName = "deleteChat"
+		case msg.LeftChatMember != nil:
+			handlerFunc = b.removeChatMemberHandler
+			handlerName = "removeChatMember"
+		case msg.Text != "":
+			handlerFunc = b.regularMessageHandler
+			handlerName = "regularMessage"
+		default:
+			logger.WithField("msg", msg).Warning("Cannot detect handler for the message")
 			return
 		}
-		if msg.NewChatMember != nil {
-			b.addChatMemberHandler(ctx, msg.Chat, msg.NewChatMember.ID)
-			return
+	} else {
+		cmd, _ := msg.ToCommand()
+		switch cmd {
+		case addLabelCmd:
+			handlerFunc = b.addUserLabelHandler
+			handlerName = "addUserLabel"
+		case removeLabelCmd:
+			handlerFunc = b.removeUserLabelHandler
+			handlerName = "removeUserLabel"
+		case showLabelsCmd:
+			handlerFunc = b.showUserLabelsHandler
+			handlerName = "showUserLabels"
+		default:
+			handlerFunc = b.commandsListHandler
+			handlerName = "commandsList"
 		}
-		if msg.IsBotLeft {
-			b.deleteChatHandler(ctx, msg.Chat.ID)
-			return
-		}
-		if msg.LeftChatMember != nil {
-			b.removeChatMemberHandler(ctx, msg.Chat, msg.LeftChatMember.ID)
-			return
-		}
-		if msg.Text != "" {
-			b.regularMessageHandler(ctx, msg)
-			return
-		}
-		return
 	}
-	cmd, label := msg.ToCommand()
-	switch cmd {
-	case addLabelCmd:
-		b.addUserLabelHandler(ctx, msg.From, label)
-	case removeLabelCmd:
-		b.removeUserLabelHandler(ctx, msg.From, label)
-	case showLabelsCmd:
-		b.showUserLabelsHandler(ctx, msg.From)
-	default:
-		b.commandsListHandler(ctx, msg.From)
-	}
+	logger.WithField("handler_name", handlerName).Info("Calling handler")
+	handlerFunc(ctx, msg)
 }
 
 func (b *Bot) createUser(ctx context.Context, user *models.User) bool {
@@ -243,7 +252,8 @@ func (b *Bot) filterNotChatUsers(ctx context.Context, users []*models.User, chat
 	return filteredUsers
 }
 
-func (b *Bot) commandsListHandler(ctx context.Context, user *models.User) {
+func (b *Bot) commandsListHandler(ctx context.Context, msg *models.Message) {
+	user := msg.From
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
 	b.createUser(ctx, user)
@@ -272,12 +282,14 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 		return
 	}
 
-	users = excludeUserFromList(users, msg.From)
+	//users = excludeUserFromList(users, msg.From)
 	users = b.filterNotChatUsers(ctx, users, msg.Chat)
 	b.notifyUsers(ctx, users, msg)
 }
 
-func (b *Bot) addChatMemberHandler(ctx context.Context, chat *models.Chat, userID int) {
+func (b *Bot) addChatMemberHandler(ctx context.Context, msg *models.Message) {
+	chat := msg.Chat
+	userID := msg.NewChatMember.ID
 	if !b.createChat(ctx, chat) {
 		return
 	}
@@ -285,9 +297,10 @@ func (b *Bot) addChatMemberHandler(ctx context.Context, chat *models.Chat, userI
 	b.addUserToChat(ctx, chat.ID, userID)
 }
 
-func (b *Bot) removeChatMemberHandler(ctx context.Context, chat *models.Chat, userID int) {
+func (b *Bot) removeChatMemberHandler(ctx context.Context, msg *models.Message) {
+	chat := msg.Chat
+	userID := msg.LeftChatMember.ID
 	logger := logging.FromContextAndBase(ctx, gLogger)
-
 	logger.WithFields(log.Fields{"user_id": userID, "chat_id": chat.ID}).Info("Remove user-chat relation")
 	err := b.storage.RemoveUserFromChat(ctx, chat.ID, userID)
 	if err != nil {
@@ -296,11 +309,12 @@ func (b *Bot) removeChatMemberHandler(ctx context.Context, chat *models.Chat, us
 	}
 }
 
-func (b *Bot) createChatHandler(ctx context.Context, chat *models.Chat) {
-	b.createChat(ctx, chat)
+func (b *Bot) createChatHandler(ctx context.Context, msg *models.Message) {
+	b.createChat(ctx, msg.Chat)
 }
 
-func (b *Bot) deleteChatHandler(ctx context.Context, chatID int) {
+func (b *Bot) deleteChatHandler(ctx context.Context, msg *models.Message) {
+	chatID := msg.Chat.ID
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("chat_id", chatID).Info("Delete chat entry from the storage")
 	err := b.storage.DeleteChat(ctx, chatID)
@@ -310,7 +324,9 @@ func (b *Bot) deleteChatHandler(ctx context.Context, chatID int) {
 	}
 }
 
-func (b *Bot) addUserLabelHandler(ctx context.Context, user *models.User, label string) {
+func (b *Bot) addUserLabelHandler(ctx context.Context, msg *models.Message) {
+	user := msg.From
+	_, label := msg.ToCommand()
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	label = processText(label)
 
@@ -335,7 +351,9 @@ func (b *Bot) addUserLabelHandler(ctx context.Context, user *models.User, label 
 	b.sendOKMsg(ctx, user)
 }
 
-func (b *Bot) removeUserLabelHandler(ctx context.Context, user *models.User, label string) {
+func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
+	user := msg.From
+	_, label := msg.ToCommand()
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	label = processText(label)
 
@@ -360,7 +378,8 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, user *models.User, lab
 	b.sendOKMsg(ctx, user)
 }
 
-func (b *Bot) showUserLabelsHandler(ctx context.Context, user *models.User) {
+func (b *Bot) showUserLabelsHandler(ctx context.Context, msg *models.Message) {
+	user := msg.From
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
 	if !b.createUser(ctx, user) {
