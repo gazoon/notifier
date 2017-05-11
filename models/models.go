@@ -32,11 +32,11 @@ func (m Message) String() string {
 
 func (m *Message) ToCommand() (string, string) {
 	text := strings.TrimSpace(m.Text)
-	parts := strings.SplitN(text, " ", 1)
+	parts := strings.SplitN(text, " ", 2)
 	cmd := strings.TrimSpace(parts[0])
 	args := ""
 	if len(parts) > 1 {
-		args = strings.TrimSpace(parts[0])
+		args = strings.TrimSpace(parts[1])
 	}
 	return cmd, args
 }

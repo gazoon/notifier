@@ -22,7 +22,7 @@
   },
   "workers_num": 1,
   "incoming_queue_size": 1000,
-  "log_level": "INFO",
+  "log_level": "debug",
   "service_name": "bot",
   "server_id": "228"
 }

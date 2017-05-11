@@ -45,7 +45,7 @@ func (mq *InMemoryQueue) GetNext() (Message, bool) {
 		if len(mq.storage) == 0 {
 			mq.mx.Unlock()
 			const fetch_delay = 10
-			gLogger.Debugf("List with messages is empty, wait %d milliseconds before the next attempt", fetch_delay)
+			//gLogger.Debugf("List with messages is empty, wait %d milliseconds before the next attempt", fetch_delay)
 			time.Sleep(time.Duration(fetch_delay) * time.Millisecond)
 			continue
 		}

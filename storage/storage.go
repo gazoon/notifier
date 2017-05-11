@@ -8,7 +8,9 @@ import (
 
 	"database/sql"
 
+	"github.com/johnnadratowski/golang-neo4j-bolt-driver/structures/graph"
 	"github.com/pkg/errors"
+	"reflect"
 )
 
 var (
@@ -41,7 +43,7 @@ func (ns *neoStorage) CreateChat(ctx context.Context, chat *models.Chat) error {
 	}
 	defer conn.Close(ctx)
 	params := map[string]interface{}{"chat_id": chat.ID, "title": chat.Title}
-	err = conn.Exec(ctx, `MERGE (c: Chat {cid: {chat_id}) ON CREATE SET c.title={title}`, params)
+	err = conn.Exec(ctx, `MERGE (c: Chat {cid: {chat_id}}) ON CREATE SET c.title={title}`, params)
 	return err
 }
 
@@ -52,7 +54,7 @@ func (ns *neoStorage) DeleteChat(ctx context.Context, chatID int) error {
 	}
 	defer conn.Close(ctx)
 	params := map[string]interface{}{"chat_id": chatID}
-	err = conn.Exec(ctx, `MATCH (c: Chat) WHERE c.cid={chat_id} DELETE c`, params)
+	err = conn.Exec(ctx, `MATCH (c: Chat) WHERE c.cid={chat_id} DETACH DELETE c`, params)
 	return err
 }
 
@@ -62,7 +64,7 @@ func (ns *neoStorage) RemoveUserFromChat(ctx context.Context, chatID, userID int
 		return err
 	}
 	defer conn.Close(ctx)
-	params := map[string]interface{}{"chat_id": chatID, "user_id": chatID}
+	params := map[string]interface{}{"chat_id": chatID, "user_id": userID}
 	err = conn.Exec(ctx, `MATCH(u:User) -[m:Member]-> (c: Chat) WHERE u.uid={user_id} AND c.cid={chat_id} DELETE m`,
 		params)
 	return err
@@ -74,7 +76,7 @@ func (ns *neoStorage) AddUserToChat(ctx context.Context, chatID, userID int) err
 		return err
 	}
 	defer conn.Close(ctx)
-	params := map[string]interface{}{"chat_id": chatID, "user_id": chatID}
+	params := map[string]interface{}{"chat_id": chatID, "user_id": userID}
 	err = conn.Exec(ctx,
 		`MATCH(u:User), (c: Chat) WHERE u.uid={user_id} AND c.cid={chat_id} MERGE (u)-[:Member]->(c)`, params)
 	return err
@@ -132,7 +134,7 @@ func (ns *neoStorage) GetUserLabels(ctx context.Context, userID int) ([]string, 
 		}
 		return nil, err
 	}
-	labels, err := rowToLabels(ctx, row)
+	labels, err := rowToLabels(row)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot convert row to labels")
 	}
@@ -152,48 +154,51 @@ func (ns *neoStorage) FindUsersByLabel(ctx context.Context, chatID int, text str
 	if err != nil {
 		return nil, err
 	}
-	users, err := rowsToUsers(ctx, rows)
+	users, err := rowsToUsers(rows)
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot convert rows to list of User models")
 	}
 	return users, nil
 }
 
-func rowToLabels(ctx context.Context, row []interface{}) ([]string, error) {
-	logger := logging.FromContextAndBase(ctx, gLogger)
+func rowToLabels(row []interface{}) ([]string, error) {
 	if len(row) != 1 {
-		logger.WithField("row", row).Error("Expected row length is 1")
-		return nil, errors.New("incorrect row length")
+		return nil, errors.Errorf("expected row length is 1, row = %v", row)
 	}
-	labels, ok := row[0].([]string)
+	elements, ok := row[0].([]interface{})
 	if !ok {
-		logger.WithField("row_value", row[0]).Error("Expected row elem type is []string")
-		return nil, errors.New("incorrect row elem type")
+		return nil, errors.Errorf("row elem must have []interface{} type, got %v", reflect.TypeOf(row[0]))
+	}
+	var labels []string
+	for _, elem := range elements {
+		label, ok := elem.(string)
+		if !ok {
+			return nil, errors.Errorf("label must be a string, got %v", reflect.TypeOf(elem))
+		}
+		labels = append(labels, label)
 	}
 	return labels, nil
 }
 
-func rowsToUsers(ctx context.Context, rows [][]interface{}) ([]*models.User, error) {
-	logger := logging.FromContextAndBase(ctx, gLogger)
+func rowsToUsers(rows [][]interface{}) ([]*models.User, error) {
 	var users []*models.User
 	for _, row := range rows {
 		if len(row) != 1 {
-			logger.WithField("row", row).Error("Expected row length is 1")
-			return nil, errors.New("incorrect row length")
+			return nil, errors.Errorf("expected row length is 1, row = %v", row)
 		}
-		data, ok := row[0].(map[string]interface{})
+		node, ok := row[0].(graph.Node)
 		if !ok {
-			logger.WithField("row_value", row[0]).Error("Expected json-like row elemt")
-			return nil, errors.New("incorrect row elem type")
+			return nil, errors.Errorf("expected graph Node row element, got %v", row[0])
 		}
-		userID, isUserIdOk := data["uid"].(int)
-		PMID, isPmIdOk := data["pmid"].(int)
+		data := node.Properties
+		userID, isUserIdOk := data["uid"].(int64)
+		PMID, isPmIdOk := data["pmid"].(int64)
 		name, isNameOk := data["name"].(string)
 		if !isUserIdOk || !isPmIdOk || !isNameOk {
-			logger.WithField("user_data", data).Errorf("Expected: uid, pmid - int, name - string")
-			return nil, errors.New("incorrect user property")
+			return nil, errors.Errorf("expected uid-int64,pmid-int64,name-string properties, got %v %v %v",
+				reflect.TypeOf(data["uid"]), reflect.TypeOf(data["pmid"]), reflect.TypeOf(data["name"]))
 		}
-		users = append(users, &models.User{ID: userID, PMID: PMID, Name: name})
+		users = append(users, &models.User{ID: int(userID), PMID: int(PMID), Name: name})
 	}
 	return users, nil
 }

@@ -122,13 +122,14 @@ func (tp *TelegramPoller) Start() error {
 	updatesConf := tgbotapi.UpdateConfig{Timeout: conf.TelegramPolling.PollTimeout}
 	go func() {
 		for {
-			gLogger.Info("Requesting new updates from API")
+			gLogger.Debug("Requesting new updates from API")
 			updates, err := bot.GetUpdates(updatesConf)
 			if err != nil {
 				gLogger.Warnf("Failed to get updates: %s retrying in %d seconds...", err, retryDelay)
 				time.Sleep(time.Second * time.Duration(retryDelay))
 				continue
 			}
+			gLogger.Info("Telegram API returns updates: %v", updates)
 			for i := range updates {
 				update := &updates[i]
 				if update.UpdateID >= updatesConf.Offset {

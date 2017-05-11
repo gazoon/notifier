@@ -25,11 +25,13 @@ const (
 
 var (
 	gLogger      = logging.WithPackage("bot")
-	commandsText = fmt.Sprintf(`Hi! I can do following for you:\n%s - Add new label for further notifications.\n`+
-		`%s - Delete label with provided name.\n%s - Show all your labels.`, addLabelCmd, removeLabelCmd, showLabelsCmd)
-	notificationTextTemplate = `%s, you've been mentioned in the %s:`
-	errorText                = `An internal bot error occurred.`
-	noLabelsText             = `You don't have any labels yet.`
+	commandsText = fmt.Sprintf("Hi! I can do following for you:\n%s - Add new label for further notifications.\n"+
+		"%s - Delete label with provided name.\n%s - Show all your labels.", addLabelCmd, removeLabelCmd, showLabelsCmd)
+	notificationTextTemplate   = "%s, you've been mentioned in the %s chat:"
+	errorText                  = "An internal bot error occurred."
+	noLabelsText               = "You don't have any labels yet."
+	labelArgMissedTextTemplate = "You didn't provide a label\nEnter %s {label_name}"
+	okText                     = "OK."
 )
 
 type Bot struct {
@@ -179,6 +181,27 @@ func (b *Bot) sendErrorMsg(ctx context.Context, user *models.User) {
 	}
 }
 
+func (b *Bot) sendOKMsg(ctx context.Context, user *models.User) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithField("user", user).Info("Sending ok message")
+	err := b.messenger.SendText(ctx, user.PMID, okText)
+	if err != nil {
+		logger.Errorf("Cannot send ok msg to the user %s", err)
+		return
+	}
+}
+
+func (b *Bot) sendMissLabelArgMsg(ctx context.Context, user *models.User, cmd string) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithField("user", user).Infof("Call cmd %s without label arg, sending label missed message", cmd)
+	labelArgMissedText := fmt.Sprintf(labelArgMissedTextTemplate, cmd)
+	err := b.messenger.SendText(ctx, user.PMID, labelArgMissedText)
+	if err != nil {
+		logger.Errorf("Cannot send label missed msg: %s", err)
+		return
+	}
+}
+
 func (b *Bot) sendUserLabels(ctx context.Context, user *models.User, labels []string) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	var labelsText string
@@ -249,6 +272,7 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 		return
 	}
 
+	users = excludeUserFromList(users, msg.From)
 	users = b.filterNotChatUsers(ctx, users, msg.Chat)
 	b.notifyUsers(ctx, users, msg)
 }
@@ -295,6 +319,11 @@ func (b *Bot) addUserLabelHandler(ctx context.Context, user *models.User, label 
 		return
 	}
 
+	if label == "" {
+		b.sendMissLabelArgMsg(ctx, user, addLabelCmd)
+		return
+	}
+
 	logger.WithFields(log.Fields{"label": label, "user_id": user.ID}).Info("Saving new user label in the storage")
 	err := b.storage.AddLabelToUser(ctx, user.ID, label)
 	if err != nil {
@@ -302,6 +331,8 @@ func (b *Bot) addUserLabelHandler(ctx context.Context, user *models.User, label 
 		b.sendErrorMsg(ctx, user)
 		return
 	}
+
+	b.sendOKMsg(ctx, user)
 }
 
 func (b *Bot) removeUserLabelHandler(ctx context.Context, user *models.User, label string) {
@@ -313,6 +344,11 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, user *models.User, lab
 		return
 	}
 
+	if label == "" {
+		b.sendMissLabelArgMsg(ctx, user, removeLabelCmd)
+		return
+	}
+
 	logger.WithFields(log.Fields{"label": label, "user_id": user.ID}).Info("Discarding user label from the storage")
 	err := b.storage.RemoveLabelFromUser(ctx, user.ID, label)
 	if err != nil {
@@ -320,6 +356,8 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, user *models.User, lab
 		b.sendErrorMsg(ctx, user)
 		return
 	}
+
+	b.sendOKMsg(ctx, user)
 }
 
 func (b *Bot) showUserLabelsHandler(ctx context.Context, user *models.User) {
@@ -339,6 +377,17 @@ func (b *Bot) showUserLabelsHandler(ctx context.Context, user *models.User) {
 	}
 
 	b.sendUserLabels(ctx, user, labels)
+}
+
+func excludeUserFromList(users []*models.User, userToExclude *models.User) []*models.User {
+	var result []*models.User
+	for _, u := range users {
+		if u.ID == userToExclude.ID {
+			continue
+		}
+		result = append(result, u)
+	}
+	return result
 }
 
 func processText(text string) string {
