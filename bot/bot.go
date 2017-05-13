@@ -282,6 +282,7 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 		logger.Errorf("Cannot get users from storage to notify: %s", err)
 		return
 	}
+	logger.WithField("users", users).Info("Users mentioned in the message")
 
 	users = excludeUserFromList(users, msg.From)
 	users = b.filterNotChatUsers(ctx, users, msg.Chat)
