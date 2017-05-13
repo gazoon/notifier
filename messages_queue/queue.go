@@ -1,4 +1,4 @@
-package incoming
+package msgsqueue
 
 import (
 	"context"
@@ -32,7 +32,7 @@ type InMemoryQueue struct {
 	mx          sync.Mutex
 }
 
-func NewMemoryQueue() *InMemoryQueue {
+func NewInMemory() *InMemoryQueue {
 	return &InMemoryQueue{canGiveMsgs: true}
 }
 

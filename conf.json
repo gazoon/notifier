@@ -14,14 +14,12 @@
   },
   "telegram": {
     "api_token": "282857391:AAEEdYoGCEa-MzLMKXUABvSTaOLUSaSS53Y",
-    "bot_name": "PMNotifierBot"
-  },
-  "telegram_sender": {
+    "bot_name": "PMNotifierBot",
     "http_timeout": 2,
     "retries": 3
   },
-  "workers_num": 1,
-  "incoming_queue_size": 1000,
+  "bot_workers_num": 1,
+  "sender_workers_num": 1,
   "log_level": "debug",
   "service_name": "bot",
   "server_id": "228"

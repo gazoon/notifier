@@ -6,7 +6,7 @@ import (
 	"notifier/models"
 	"time"
 
-	"notifier/incoming"
+	"notifier/messages_queue"
 	"notifier/tracing"
 
 	"context"
@@ -82,10 +82,10 @@ func prepareContext(requestID string) context.Context {
 }
 
 type TelegramPoller struct {
-	queue incoming.Producer
+	queue msgsqueue.Producer
 }
 
-func NewTelegramPoller(queue incoming.Producer) *TelegramPoller {
+func NewTelegramPoller(queue msgsqueue.Producer) *TelegramPoller {
 	return &TelegramPoller{queue}
 }
 

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 	"notifier/config"
-	"notifier/incoming"
 	"notifier/logging"
+	"notifier/messages_queue"
 	"notifier/messenger"
 	"notifier/models"
 	"notifier/neo"
@@ -15,7 +15,7 @@ import (
 	"sync"
 
 	log "github.com/Sirupsen/logrus"
-	"notifier/outgoing"
+	"notifier/notifications_queue"
 )
 
 const (
@@ -35,23 +35,6 @@ var (
 	okText                     = "OK."
 )
 
-type Handler func(ctx context.Context, msg *models.Message)
-type Bot struct {
-	incomingQueue     incoming.Consumer
-	notificationQueue outgoing.Producer
-	neoDB             neo.Client
-	messenger         messenger.Messenger
-	storage           storage.Storage
-
-	wg sync.WaitGroup
-}
-
-func New(inQueue incoming.Consumer, outQueue outgoing.Producer, neoDB neo.Client, sender messenger.Messenger,
-	storage storage.Storage) *Bot {
-
-	return &Bot{incomingQueue: inQueue, notificationQueue: outQueue, neoDB: neoDB, messenger: sender, storage: storage}
-}
-
 func prepareContext(msg *models.Message) context.Context {
 	requestID := msg.RequestID
 	ctx := tracing.NewContext(context.Background(), requestID)
@@ -60,23 +43,46 @@ func prepareContext(msg *models.Message) context.Context {
 	return ctx
 }
 
+type Handler func(ctx context.Context, msg *models.Message)
+
+type Bot struct {
+	messagesQueue     msgsqueue.Consumer
+	notificationQueue notifqueue.Producer
+	neoDB             neo.Client
+	messenger         messenger.Messenger
+	storage           storage.Storage
+	wg                sync.WaitGroup
+}
+
+func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer, neoDB neo.Client,
+	messenger messenger.Messenger, storage storage.Storage) *Bot {
+
+	return &Bot{
+		messagesQueue:     messagesQueue,
+		notificationQueue: notificationQueue,
+		neoDB:             neoDB,
+		messenger:         messenger,
+		storage:           storage,
+	}
+}
+
 func (b *Bot) Start() {
 	conf := config.GetInstance()
-	gLogger.WithField("workers_num", conf.WorkersNum).Info("Listening for incoming messages")
-	for i := 0; i < conf.WorkersNum; i++ {
+	gLogger.WithField("workers_num", conf.BotWorkersNum).Info("Listening for incoming messages")
+	for i := 0; i < conf.BotWorkersNum; i++ {
 		b.wg.Add(1)
 		go func() {
 			defer b.wg.Done()
 			for {
 				gLogger.Info("Fetching new msg from incoming queue")
-				queueMsg, ok := b.incomingQueue.GetNext()
+				queueMsg, ok := b.messagesQueue.GetNext()
 				if !ok {
 					return
 				}
 				msg := queueMsg.Payload()
 				ctx := prepareContext(msg)
 				logger := logging.FromContextAndBase(ctx, gLogger)
-				logger.WithField("msg", msg).Info("Message has been received from incoming queue")
+				logger.WithField("msg", msg).Info("Message received from incoming queue")
 				b.dispatchMessage(ctx, msg)
 				logger.Info("Send acknowledgement to the queue")
 				queueMsg.Ack()
@@ -87,8 +93,8 @@ func (b *Bot) Start() {
 
 func (b *Bot) Stop() {
 	gLogger.Info("Close incoming queue for reading")
-	b.incomingQueue.StopGivingMsgs()
-	gLogger.Info("Waiting until the workers will process the remaining messages")
+	b.messagesQueue.StopGivingMsgs()
+	gLogger.Info("Waiting until all workers will process the remaining messages")
 	b.wg.Wait()
 	gLogger.Info("All workers've been stopped")
 }

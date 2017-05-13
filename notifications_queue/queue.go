@@ -1,4 +1,4 @@
-package outgoing
+package notifqueue
 
 import (
 	"context"
@@ -28,7 +28,7 @@ type InMemoryQueue struct {
 	mx                sync.Mutex
 }
 
-func NewMemoryQueue() *InMemoryQueue {
+func NewInMemory() *InMemoryQueue {
 	comparator := func(a, b interface{}) int {
 		aRecord := a.(*models.Notification)
 		bRecord := b.(*models.Notification)

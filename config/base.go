@@ -22,19 +22,16 @@ type NeoSettings struct {
 }
 
 type TelegramSettings struct {
-	APIToken string `json:"api_token"`
-	BotName  string `json:"bot_name"`
+	APIToken    string `json:"api_token"`
+	BotName     string `json:"bot_name"`
+	HttpTimeout int    `json:"http_timeout"`
+	Retries     int    `json:"retries"`
 }
 
 type TelegramPolling struct {
 	PollTimeout int `json:"poll_timeout"`
 	ChannelSize int `json:"channel_size"`
 	RetryDelay  int `json:"retry_delay"`
-}
-
-type TelegramSender struct {
-	HttpTimeout int `json:"http_timeout"`
-	Retries     int `json:"retries"`
 }
 
 func FromJSONFile(path string, config interface{}) error {

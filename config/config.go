@@ -13,12 +13,11 @@ var (
 
 type ServiceConfig struct {
 	BaseConfig
-	WorkersNum        int               `json:"workers_num"`
-	IncomingQueueSize int               `json:"incoming_queue_size"`
-	Neo               *NeoSettings      `json:"neo"`
-	Telegram          *TelegramSettings `json:"telegram"`
-	TelegramPolling   *TelegramPolling  `json:"telegram_polling"`
-	TelegramSender    *TelegramSender   `json:"telegram_sender"`
+	BotWorkersNum   int               `json:"bot_workers_num"`
+	SenderWorkerNum int               `json:"sender_workers_num"`
+	Neo             *NeoSettings      `json:"neo"`
+	Telegram        *TelegramSettings `json:"telegram"`
+	TelegramPolling *TelegramPolling  `json:"telegram_polling"`
 }
 
 func Initialization(configPath string) {
