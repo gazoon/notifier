@@ -5,6 +5,7 @@ import (
 	"notifier/config"
 	"notifier/logging"
 	"notifier/messenger"
+	"notifier/models"
 	"notifier/notifications_queue"
 	"sync"
 )
@@ -41,9 +42,11 @@ func (s *Sender) Start() {
 				if !ok {
 					return
 				}
-				ctx := context.TODO()
+				ctx := prepareContext(notification.RequestID)
 				logger := logging.FromContextAndBase(ctx, gLogger)
 				logger.WithField("notification", notification).Info("Notification received from outgoing queue")
+
+				s.sendNotification(ctx,notification)
 			}
 		}()
 	}
@@ -55,4 +58,14 @@ func (s *Sender) Stop() {
 	gLogger.Info("Waiting until all workers will process the remaining notifications")
 	s.wg.Wait()
 	gLogger.Info("All workers've been stopped")
+}
+
+func (s *Sender) sendNotification(ctx context.Context, notification *models.Notification) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithField("user", notification.User).Info("Sending notification to the user")
+	err := s.messenger.SendForwardWithText(ctx, notification.User.PMID, notification.ChatID, notification.MessageID,
+		notification.Text)
+	if err!= nil {
+		logger.Errorf("Cannot sent notification to the user: %s", err)
+	}
 }
