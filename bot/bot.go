@@ -136,8 +136,9 @@ func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {
 
 func (b *Bot) createUser(ctx context.Context, user *models.User) bool {
 	logger := logging.FromContextAndBase(ctx, gLogger)
+	labelFromName := processText(user.Name)
 	logger.WithField("user", user).Info("Saving user in the storage")
-	err := b.storage.CreateUser(ctx, user)
+	err := b.storage.CreateUser(ctx, user, []string{labelFromName})
 	if err != nil {
 		logger.Errorf("Cannot save user in the storage: %s", err)
 		return false
@@ -282,7 +283,7 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 		return
 	}
 
-	//users = excludeUserFromList(users, msg.From)
+	users = excludeUserFromList(users, msg.From)
 	users = b.filterNotChatUsers(ctx, users, msg.Chat)
 	b.notifyUsers(ctx, users, msg)
 }

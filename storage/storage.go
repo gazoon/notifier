@@ -22,7 +22,7 @@ type Storage interface {
 	DeleteChat(ctx context.Context, chatID int) error
 	RemoveUserFromChat(ctx context.Context, chatID, userID int) error
 	AddUserToChat(ctx context.Context, chatID, userID int) error
-	CreateUser(ctx context.Context, user *models.User) error
+	CreateUser(ctx context.Context, user *models.User, labels []string) error
 	AddLabelToUser(ctx context.Context, userID int, label string) error
 	RemoveLabelFromUser(ctx context.Context, userID int, label string) error
 	GetUserLabels(ctx context.Context, userID int) ([]string, error)
@@ -82,14 +82,18 @@ func (ns *neoStorage) AddUserToChat(ctx context.Context, chatID, userID int) err
 	return err
 }
 
-func (ns *neoStorage) CreateUser(ctx context.Context, user *models.User) error {
+func (ns *neoStorage) CreateUser(ctx context.Context, user *models.User, labels []string) error {
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
 	}
 	defer conn.Close(ctx)
-	params := map[string]interface{}{"user_id": user.ID, "name": user.Name, "pmid": user.PMID, "label": user.Name}
-	err = conn.Exec(ctx, `MERGE (u: User {uid: {user_id}}) ON CREATE SET u.name={name},u.pmid={pmid},u.lbls=[{label}]`,
+	labelsArg := make([]interface{}, len(labels))
+	for i := range labels {
+		labelsArg[i] = labels[i]
+	}
+	params := map[string]interface{}{"user_id": user.ID, "name": user.Name, "pmid": user.PMID, "labels": labelsArg}
+	err = conn.Exec(ctx, `MERGE (u: User {uid: {user_id}}) ON CREATE SET u.name={name},u.pmid={pmid},u.lbls={labels}`,
 		params)
 	return err
 }
