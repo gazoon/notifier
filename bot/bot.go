@@ -15,6 +15,7 @@ import (
 	"sync"
 
 	log "github.com/Sirupsen/logrus"
+	"notifier/outgoing"
 )
 
 const (
@@ -36,15 +37,19 @@ var (
 
 type Handler func(ctx context.Context, msg *models.Message)
 type Bot struct {
-	queue     incomming.Consumer
-	neoDB     neo.Client
-	messenger messenger.Messenger
-	storage   storage.Storage
-	wg        sync.WaitGroup
+	incomingQueue     incoming.Consumer
+	notificationQueue outgoing.Producer
+	neoDB             neo.Client
+	messenger         messenger.Messenger
+	storage           storage.Storage
+
+	wg sync.WaitGroup
 }
 
-func New(queue incomming.Consumer, neoDB neo.Client, sender messenger.Messenger, storage storage.Storage) *Bot {
-	return &Bot{queue: queue, neoDB: neoDB, messenger: sender, storage: storage}
+func New(inQueue incoming.Consumer, outQueue outgoing.Producer, neoDB neo.Client, sender messenger.Messenger,
+	storage storage.Storage) *Bot {
+
+	return &Bot{incomingQueue: inQueue, notificationQueue: outQueue, neoDB: neoDB, messenger: sender, storage: storage}
 }
 
 func prepareContext(msg *models.Message) context.Context {
@@ -64,7 +69,7 @@ func (b *Bot) Start() {
 			defer b.wg.Done()
 			for {
 				gLogger.Info("Fetching new msg from incoming queue")
-				queueMsg, ok := b.queue.GetNext()
+				queueMsg, ok := b.incomingQueue.GetNext()
 				if !ok {
 					return
 				}
@@ -82,7 +87,7 @@ func (b *Bot) Start() {
 
 func (b *Bot) Stop() {
 	gLogger.Info("Close incoming queue for reading")
-	b.queue.StopGivingMsgs()
+	b.incomingQueue.StopGivingMsgs()
 	gLogger.Info("Waiting until the workers will process the remaining messages")
 	b.wg.Wait()
 	gLogger.Info("All workers've been stopped")

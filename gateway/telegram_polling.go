@@ -82,10 +82,10 @@ func prepareContext(requestID string) context.Context {
 }
 
 type TelegramPoller struct {
-	queue incomming.Producer
+	queue incoming.Producer
 }
 
-func NewTelegramPoller(queue incomming.Producer) *TelegramPoller {
+func NewTelegramPoller(queue incoming.Producer) *TelegramPoller {
 	return &TelegramPoller{queue}
 }
 

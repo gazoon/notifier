@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type Message struct {
@@ -60,4 +61,18 @@ type User struct {
 
 func (u User) String() string {
 	return toString(&u)
+}
+
+type Notification struct {
+	ID        string
+	RequestID string
+	Text      string
+	ReadyAt   time.Time
+	User      *User
+	MessageID int
+	ChatID    int
+}
+
+func (n Notification) String() string {
+	return toString(&n)
 }

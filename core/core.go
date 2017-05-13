@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/pkg/errors"
+	"notifier/outgoing"
 )
 
 var (
@@ -30,7 +31,8 @@ func Initialization(confPath string) {
 func Run(confPath string) {
 	Initialization(confPath)
 	conf := config.GetInstance()
-	incomingQueue := incomming.NewMemoryQueue()
+	incomingQueue := incoming.NewMemoryQueue()
+	outgoingQueue := outgoing.NewMemoryQueue()
 	gLogger.Info("Initializing neo client")
 	neoDB, err := neo.NewClient(conf.Neo.Host, conf.Neo.Port, conf.Neo.User, conf.Neo.Password, conf.Neo.Timeout,
 		conf.Neo.PoolSize)
@@ -43,7 +45,7 @@ func Run(confPath string) {
 		panic(errors.Wrap(err, "cannot create neo client"))
 	}
 	dataStorage := storage.NewNeoStorage(neoDB)
-	botService := bot.New(incomingQueue, neoDB, telegramMessenger, dataStorage)
+	botService := bot.New(incomingQueue, outgoingQueue, neoDB, telegramMessenger, dataStorage)
 	pollerService := gateway.NewTelegramPoller(incomingQueue)
 	gLogger.Info("Starting bot service")
 	botService.Start()
