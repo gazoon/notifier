@@ -1,0 +1,7 @@
+1. initialize neo client inside the storage
+2. add per user ready delay setting
+3. add mongo client wrapper
+4. remove neo library from the storage dependencies
+5. add mongo messages queue
+6. get rid of the msgsqueue.Message model and add RemoveMsg method to the Consumer
+7. Separate queue Producer and Consumer implementations?
