@@ -5,6 +5,7 @@ import (
 	"notifier/logging"
 	"notifier/models"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -27,18 +28,18 @@ type Message interface {
 }
 
 type InMemoryQueue struct {
-	storage     []*models.Message
-	canGiveMsgs bool
-	mx          sync.Mutex
+	storage    []*models.Message
+	readClosed int32
+	mx         sync.Mutex
 }
 
 func NewInMemory() *InMemoryQueue {
-	return &InMemoryQueue{canGiveMsgs: true}
+	return &InMemoryQueue{}
 }
 
 func (mq *InMemoryQueue) GetNext() (Message, bool) {
 	for {
-		if !mq.canGiveMsgs {
+		if atomic.LoadInt32(&mq.readClosed) == 1 {
 			return nil, false
 		}
 		mq.mx.Lock()
@@ -66,7 +67,7 @@ func (mq *InMemoryQueue) Put(ctx context.Context, msg *models.Message) error {
 }
 
 func (mq *InMemoryQueue) StopGivingMsgs() {
-	mq.canGiveMsgs = false
+	atomic.StoreInt32(&mq.readClosed, 1)
 }
 
 type regularMsg struct {

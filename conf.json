@@ -15,7 +15,7 @@
   "telegram": {
     "api_token": "282857391:AAEEdYoGCEa-MzLMKXUABvSTaOLUSaSS53Y",
     "bot_name": "PMNotifierBot",
-    "http_timeout": 2,
+    "http_timeout": 5,
     "retries": 3
   },
   "bot_workers_num": 1,

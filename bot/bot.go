@@ -19,9 +19,10 @@ import (
 )
 
 const (
-	addLabelCmd    = "addLabel"
-	removeLabelCmd = "removeLabel"
-	showLabelsCmd  = "showLabels"
+	notificationDelay = 10
+	addLabelCmd       = "addLabel"
+	removeLabelCmd    = "removeLabel"
+	showLabelsCmd     = "showLabels"
 )
 
 var (
@@ -117,12 +118,9 @@ func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {
 		case msg.LeftChatMember != nil:
 			handlerFunc = b.removeChatMemberHandler
 			handlerName = "removeChatMember"
-		case msg.Text != "":
+		default:
 			handlerFunc = b.regularMessageHandler
 			handlerName = "regularMessage"
-		default:
-			logger.WithField("msg", msg).Warning("Cannot detect handler for the message")
-			return
 		}
 	} else {
 		cmd, _ := msg.ToCommand()
@@ -183,10 +181,12 @@ func (b *Bot) notifyUsers(ctx context.Context, users []*models.User, msg *models
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	for _, user := range users {
 		notificationText := fmt.Sprintf(notificationTextTemplate, user.Name, msg.Chat.Title)
-		logger.WithField("user", user).Info("Sending notification to the user")
-		err := b.messenger.SendForwardWithText(ctx, user.PMID, msg.Chat.ID, msg.ID, notificationText)
+		notification := models.NewNotification(user, msg.ID, msg.Chat.ID, notificationDelay, notificationText,
+			msg.RequestID)
+		logger.WithField("notification", notification).Info("Put notification to the queue")
+		err := b.notificationQueue.Put(ctx, notification)
 		if err != nil {
-			logger.Errorf("Cannot notify user: %s", err)
+			logger.Errorf("Cannot save user notification: %s", err)
 			continue
 		}
 	}
@@ -287,6 +287,17 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 
 	b.addUserToChat(ctx, msg.Chat.ID, msg.From.ID)
 
+	logger.WithFields(log.Fields{"user": msg.From, "chat_id": msg.Chat.ID}).
+		Info("Discarding not actual user notifications")
+	err := b.notificationQueue.Discard(ctx, msg.From, msg.Chat.ID)
+	if err != nil {
+		logger.Errorf("Cannot clear user notifications: %s", err)
+	}
+	if msgText == "" {
+		logger.Info("Message without text, skipping notification part")
+		return
+	}
+
 	logger.WithField("message_text", msgText).Info("Searching for users mentioned in the message text")
 	users, err := b.storage.FindUsersByLabel(ctx, msg.Chat.ID, msgText)
 	if err != nil {
@@ -295,7 +306,7 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 	}
 	logger.WithField("users", users).Info("Users mentioned in the message")
 
-	users = excludeUserFromList(users, msg.From)
+	//users = excludeUserFromList(users, msg.From)
 	users = b.filterNotChatUsers(ctx, users, msg.Chat)
 	b.notifyUsers(ctx, users, msg)
 }

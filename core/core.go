@@ -43,7 +43,7 @@ func Run(confPath string) {
 	gLogger.Info("Initializing messenger API")
 	telegramMessenger, err := messenger.NewTelegram(conf.Telegram.APIToken, conf.Telegram.HttpTimeout)
 	if err != nil {
-		panic(errors.Wrap(err, "cannot create neo client"))
+		panic(errors.Wrap(err, "cannot initialize telegram messenger API"))
 	}
 	dataStorage := storage.NewNeoStorage(neoDB)
 	botService := bot.New(incomingQueue, outgoingQueue, neoDB, telegramMessenger, dataStorage)

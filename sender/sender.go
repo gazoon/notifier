@@ -37,7 +37,7 @@ func (s *Sender) Start() {
 		go func() {
 			defer s.wg.Done()
 			for {
-				gLogger.Info("Fetching new msg from incoming queue")
+				gLogger.Info("Fetching new notification from queue")
 				notification, ok := s.notificationQueue.GetNext()
 				if !ok {
 					return
@@ -46,7 +46,7 @@ func (s *Sender) Start() {
 				logger := logging.FromContextAndBase(ctx, gLogger)
 				logger.WithField("notification", notification).Info("Notification received from outgoing queue")
 
-				s.sendNotification(ctx,notification)
+				s.sendNotification(ctx, notification)
 			}
 		}()
 	}
@@ -65,7 +65,7 @@ func (s *Sender) sendNotification(ctx context.Context, notification *models.Noti
 	logger.WithField("user", notification.User).Info("Sending notification to the user")
 	err := s.messenger.SendForwardWithText(ctx, notification.User.PMID, notification.ChatID, notification.MessageID,
 		notification.Text)
-	if err!= nil {
+	if err != nil {
 		logger.Errorf("Cannot sent notification to the user: %s", err)
 	}
 }

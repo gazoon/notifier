@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/emirpasic/gods/sets/treeset"
+	"sync/atomic"
 )
 
 type Producer interface {
@@ -24,7 +25,7 @@ type Consumer interface {
 type InMemoryQueue struct {
 	storageByTime     *treeset.Set
 	storageByIdentity map[string][]*models.Notification
-	canGiveMsgs       bool
+	readClosed        int32
 	mx                sync.Mutex
 }
 
@@ -46,7 +47,6 @@ func NewInMemory() *InMemoryQueue {
 	return &InMemoryQueue{
 		storageByTime:     treeset.NewWith(comparator),
 		storageByIdentity: map[string][]*models.Notification{},
-		canGiveMsgs:       true,
 	}
 }
 
@@ -80,7 +80,8 @@ func (mq *InMemoryQueue) Discard(ctx context.Context, user *models.User, chatID 
 
 func (mq *InMemoryQueue) GetNext() (*models.Notification, bool) {
 	for {
-		if !mq.canGiveMsgs {
+
+		if atomic.LoadInt32(&mq.readClosed) == 1 {
 			return nil, false
 		}
 		mq.mx.Lock()
@@ -125,5 +126,5 @@ func (mq *InMemoryQueue) tryGetFirstByTime() (*models.Notification, bool) {
 }
 
 func (mq *InMemoryQueue) StopGivingMsgs() {
-	mq.canGiveMsgs = false
+	atomic.StoreInt32(&mq.readClosed, 1)
 }

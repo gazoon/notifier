@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/satori/go.uuid"
 	"strings"
 	"time"
 )
@@ -71,6 +72,18 @@ type Notification struct {
 	User      *User
 	MessageID int
 	ChatID    int
+}
+
+func NewNotification(user *User, msgID, chatID, readyDelay int, text, requestID string) *Notification {
+	return &Notification{
+		ID:        uuid.NewV4().String(),
+		RequestID: requestID,
+		Text:      text,
+		ReadyAt:   time.Now().Add(time.Second * time.Duration(readyDelay)),
+		User:      user,
+		MessageID: msgID,
+		ChatID:    chatID,
+	}
 }
 
 func (n Notification) String() string {
