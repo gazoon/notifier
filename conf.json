@@ -18,7 +18,17 @@
     "http_timeout": 5,
     "retries": 3
   },
+  "mongo_notification": {
+    "database": "local",
+    "host": "localhost",
+    "port": 27017,
+    "user": "",
+    "password": "",
+    "timeout": 1,
+    "pool_size": 8
+  },
   "bot_workers_num": 1,
+  "notify_yourself": true,
   "sender_workers_num": 1,
   "log_level": "debug",
   "service_name": "bot",

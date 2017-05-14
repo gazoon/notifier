@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	notificationDelay = 10
+	notificationDelay = 100
 	addLabelCmd       = "addLabel"
 	removeLabelCmd    = "removeLabel"
 	showLabelsCmd     = "showLabels"
@@ -278,6 +278,7 @@ func (b *Bot) commandsListHandler(ctx context.Context, msg *models.Message) {
 }
 
 func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
+	conf := config.GetInstance()
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	msgText := processText(msg.Text)
 
@@ -305,8 +306,10 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 		return
 	}
 	logger.WithField("users", users).Info("Users mentioned in the message")
-
-	//users = excludeUserFromList(users, msg.From)
+	if !conf.NotifyYourself {
+		// for debug purposes
+		users = excludeUserFromList(users, msg.From)
+	}
 	users = b.filterNotChatUsers(ctx, users, msg.Chat)
 	b.notifyUsers(ctx, users, msg)
 }

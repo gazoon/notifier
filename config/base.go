@@ -12,10 +12,11 @@ type BaseConfig struct {
 	ServerID    string `json:"server_id"`
 }
 
-type NeoSettings struct {
+type DatabaseSettings struct {
 	Host     string `json:"host"`
 	Port     int    `json:"port"`
 	User     string `json:"user"`
+	Database string `json:"database"`
 	Password string `json:"password"`
 	Timeout  int    `json:"timeout"`
 	PoolSize int    `json:"pool_size"`

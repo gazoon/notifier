@@ -33,7 +33,14 @@ func Run(confPath string) {
 	Initialization(confPath)
 	conf := config.GetInstance()
 	incomingQueue := msgsqueue.NewInMemory()
-	outgoingQueue := notifqueue.NewInMemory()
+	//outMemoryQueue := notifqueue.NewInMemory()
+	gLogger.Info("Initializing mongo notification queue")
+	outMongoQueue, err := notifqueue.NewMongoQueue(conf.MongoNotification.Database, conf.MongoNotification.User,
+		conf.MongoNotification.Password, conf.MongoNotification.Host, conf.MongoNotification.Port,
+		conf.MongoNotification.Timeout, conf.MongoNotification.PoolSize)
+	if err != nil {
+		panic(errors.Wrap(err, "mongo notification queue"))
+	}
 	gLogger.Info("Initializing neo client")
 	neoDB, err := neo.NewClient(conf.Neo.Host, conf.Neo.Port, conf.Neo.User, conf.Neo.Password, conf.Neo.Timeout,
 		conf.Neo.PoolSize)
@@ -46,9 +53,9 @@ func Run(confPath string) {
 		panic(errors.Wrap(err, "cannot initialize telegram messenger API"))
 	}
 	dataStorage := storage.NewNeoStorage(neoDB)
-	botService := bot.New(incomingQueue, outgoingQueue, neoDB, telegramMessenger, dataStorage)
+	botService := bot.New(incomingQueue, outMongoQueue, neoDB, telegramMessenger, dataStorage)
 	pollerService := gateway.NewTelegramPoller(incomingQueue)
-	senderService := sender.New(outgoingQueue, telegramMessenger)
+	senderService := sender.New(outMongoQueue, telegramMessenger)
 	gLogger.Info("Starting bot service")
 	botService.Start()
 	defer botService.Stop()
