@@ -9,15 +9,15 @@ import (
 )
 
 type Message struct {
-	ID             int
-	RequestID      string
-	Chat           *Chat
-	Text           string
-	From           *User
-	NewChatMember  *User
-	LeftChatMember *User
-	IsBotLeft      bool
-	IsBotAdded     bool
+	ID             int    `bson:"message_id"`
+	RequestID      string `bson:"request_id"`
+	Chat           *Chat  `bson:"chat"`
+	Text           string `bson:"text"`
+	From           *User  `bson:"from"`
+	NewChatMember  *User  `bson:"new_chat_member"`
+	LeftChatMember *User  `bson:"left_chat_member"`
+	IsBotLeft      bool   `bson:"is_bot_left"`
+	IsBotAdded     bool   `bson:"is_bot_added"`
 }
 
 func toString(model interface{}) string {
@@ -44,9 +44,9 @@ func (m *Message) ToCommand() (string, string) {
 }
 
 type Chat struct {
-	ID        int
-	IsPrivate bool
-	Title     string
+	ID        int    `bson:"id"`
+	IsPrivate bool   `bson:"is_private"`
+	Title     string `bson:"title"`
 }
 
 func (c Chat) String() string {
@@ -54,10 +54,10 @@ func (c Chat) String() string {
 }
 
 type User struct {
-	ID       int
-	PMID     int
-	Username string
-	Name     string
+	ID       int    `bson:"id"`
+	PMID     int    `bson:"pmid"`
+	Username string `bson:"username"`
+	Name     string `bson:"name"`
 }
 
 func (u User) String() string {
@@ -65,13 +65,13 @@ func (u User) String() string {
 }
 
 type Notification struct {
-	ID        string
-	RequestID string
-	Text      string
-	ReadyAt   time.Time
-	User      *User
-	MessageID int
-	ChatID    int
+	ID        string    `bson:"notification_id"`
+	RequestID string    `bson:"request_id"`
+	Text      string    `bson:"text"`
+	ReadyAt   time.Time `bson:"ready_at"`
+	User      *User     `bson:"user"`
+	MessageID int       `bson:"message_id"`
+	ChatID    int       `bson:"chat_id"`
 }
 
 func NewNotification(user *User, msgID, chatID, readyDelay int, text, requestID string) *Notification {

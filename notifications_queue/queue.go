@@ -178,7 +178,7 @@ func (mq *MongoQueue) Put(ctx context.Context, record *models.Notification) erro
 func (mq *MongoQueue) Discard(ctx context.Context, user *models.User, chatID int) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.Info("Inserting new notification in the mongo")
-	_, err := mq.collection.RemoveAll(bson.M{"user.id": user.ID, "chatid": chatID})
+	_, err := mq.collection.RemoveAll(bson.M{"user.id": user.ID, "chat_id": chatID})
 	if err != nil {
 		return errors.Wrap(err, "remove all failed")
 	}
@@ -196,7 +196,7 @@ func (mq *MongoQueue) GetNext() (*models.Notification, bool) {
 			return nil, false
 		}
 		model := &models.Notification{}
-		_, err := mq.collection.Find(bson.M{"readyat": bson.M{"$lt": time.Now()}}).Sort("readyat").Limit(1).Apply(
+		_, err := mq.collection.Find(bson.M{"ready_at": bson.M{"$lt": time.Now()}}).Sort("ready_at").Limit(1).Apply(
 			mgo.Change{Remove: true}, model)
 		if err != nil {
 			if err != mgo.ErrNotFound {

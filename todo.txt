@@ -6,3 +6,6 @@
 6. get rid of the msgsqueue.Message model and add RemoveMsg method to the Consumer
 7. Separate queue Producer and Consumer implementations?
 8. get rid of config singleton?
+9. add dynamic log level
+10. add base db queue class
+11. make message id unique

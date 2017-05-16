@@ -4,13 +4,19 @@ import (
 	"context"
 	"notifier/logging"
 	"notifier/models"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/pkg/errors"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 var (
-	gLogger = logging.WithPackage("incoming_queue")
+	gLogger         = logging.WithPackage("incoming_queue")
+	mongoCollection = "messages"
 )
 
 type Producer interface {
@@ -18,13 +24,9 @@ type Producer interface {
 }
 
 type Consumer interface {
-	GetNext() (Message, bool)
+	GetNext() (*models.Message, bool)
+	Remove(ctx context.Context, msg *models.Message) error
 	StopGivingMsgs()
-}
-
-type Message interface {
-	Payload() *models.Message
-	Ack()
 }
 
 type InMemoryQueue struct {
@@ -37,7 +39,7 @@ func NewInMemory() *InMemoryQueue {
 	return &InMemoryQueue{}
 }
 
-func (mq *InMemoryQueue) GetNext() (Message, bool) {
+func (mq *InMemoryQueue) GetNext() (*models.Message, bool) {
 	for {
 		if atomic.LoadInt32(&mq.readClosed) == 1 {
 			return nil, false
@@ -50,10 +52,10 @@ func (mq *InMemoryQueue) GetNext() (Message, bool) {
 			time.Sleep(time.Duration(fetch_delay) * time.Millisecond)
 			continue
 		}
-		elem := mq.storage[0]
+		msg := mq.storage[0]
 		mq.storage = mq.storage[1:]
 		mq.mx.Unlock()
-		return &regularMsg{elem}, true
+		return msg, true
 	}
 }
 
@@ -65,17 +67,84 @@ func (mq *InMemoryQueue) Put(ctx context.Context, msg *models.Message) error {
 	mq.storage = append(mq.storage, msg)
 	return nil
 }
+func (mq *InMemoryQueue) Remove(ctx context.Context, msg *models.Message) error {
+	return nil
+}
 
 func (mq *InMemoryQueue) StopGivingMsgs() {
 	atomic.StoreInt32(&mq.readClosed, 1)
 }
 
-type regularMsg struct {
-	payload *models.Message
+type MongoQueue struct {
+	session    *mgo.Session
+	db         *mgo.Database
+	collection *mgo.Collection
+	readClosed int32
 }
 
-func (rm *regularMsg) Payload() *models.Message {
-	return rm.payload
+func NewMongoQueue(database, user, password, host string, port, timeout, poolSize int) (*MongoQueue, error) {
+	session, err := mgo.DialWithInfo(&mgo.DialInfo{
+		Addrs:     []string{host + ":" + strconv.Itoa(port)},
+		Database:  database,
+		Username:  user,
+		Password:  password,
+		Timeout:   time.Duration(timeout) * time.Second,
+		PoolLimit: poolSize,
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "dialing failed")
+	}
+	session.SetSafe(&mgo.Safe{WMode: "majority", J: true, WTimeout: timeout * 1000})
+	session.SetMode(mgo.Eventual, true)
+	db := session.DB("")
+	collection := db.C(mongoCollection)
+	return &MongoQueue{session: session, db: db, collection: collection}, nil
 }
 
-func (rm *regularMsg) Ack() {}
+func (mq *MongoQueue) Put(ctx context.Context, msg *models.Message) error {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.Info("Inserting new notification in the mongo")
+	_, err := mq.collection.Upsert(bson.M{"chat_id": msg.Chat.ID},
+		bson.M{
+			"$set": bson.M{"chat_id": msg.Chat.ID},
+			"$push": bson.M{"msgs": bson.M{
+				"created_at":    time.Now(),
+				"dispatched_at": nil,
+				"message_id":    msg.ID,
+				"payload":       msg,
+			}},
+		})
+	if err != nil {
+		return errors.Wrap(err, "inserting failed")
+	}
+	return nil
+}
+
+func (mq *MongoQueue) StopGivingMsgs() {
+	atomic.StoreInt32(&mq.readClosed, 1)
+}
+
+func (mq *MongoQueue) GetNext() (*models.Message, bool) {
+	gLogger.Info("Inserting new notification in the mongo")
+	for {
+		if atomic.LoadInt32(&mq.readClosed) == 1 {
+			return nil, false
+		}
+		model := &models.Message{}
+		_, err := mq.collection.Find(bson.M{"readyat": bson.M{"$lt": time.Now()}}).Sort("readyat").Limit(1).Apply(
+			mgo.Change{Remove: true}, model)
+		if err != nil {
+			if err != mgo.ErrNotFound {
+				gLogger.Errorf("Cannot fetch record from mongo: %s", err)
+			}
+			const fetch_delay = 10
+			time.Sleep(time.Duration(fetch_delay) * time.Millisecond)
+			continue
+		}
+		return model, true
+	}
+}
+
+func (mq *MongoQueue) Remove(ctx context.Context, msg *models.Message) error {
+	return nil
+}

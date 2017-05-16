@@ -32,7 +32,13 @@ func Initialization(confPath string) {
 func Run(confPath string) {
 	Initialization(confPath)
 	conf := config.GetInstance()
-	incomingQueue := msgsqueue.NewInMemory()
+	gLogger.Info("Initializing mongo messages queue")
+	incomingQueue, err := msgsqueue.NewMongoQueue(conf.MongoMessages.Database, conf.MongoMessages.User,
+		conf.MongoMessages.Password, conf.MongoMessages.Host, conf.MongoMessages.Port, conf.MongoMessages.Timeout,
+		conf.MongoMessages.PoolSize)
+	if err != nil {
+		panic(errors.Wrap(err, "mongo messages queue"))
+	}
 	//outMemoryQueue := notifqueue.NewInMemory()
 	gLogger.Info("Initializing mongo notification queue")
 	outMongoQueue, err := notifqueue.NewMongoQueue(conf.MongoNotification.Database, conf.MongoNotification.User,

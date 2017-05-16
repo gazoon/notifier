@@ -76,17 +76,15 @@ func (b *Bot) Start() {
 			defer b.wg.Done()
 			for {
 				gLogger.Info("Fetching new msg from incoming queue")
-				queueMsg, ok := b.messagesQueue.GetNext()
+				msg, ok := b.messagesQueue.GetNext()
 				if !ok {
 					return
 				}
-				msg := queueMsg.Payload()
 				ctx := prepareContext(msg)
 				logger := logging.FromContextAndBase(ctx, gLogger)
 				logger.WithField("msg", msg).Info("Message received from incoming queue")
 				b.dispatchMessage(ctx, msg)
 				logger.Info("Send acknowledgement to the queue")
-				queueMsg.Ack()
 			}
 		}()
 	}
