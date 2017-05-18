@@ -2,6 +2,7 @@ package msgsqueue
 
 import (
 	"context"
+	log "github.com/Sirupsen/logrus"
 	"notifier/logging"
 	"notifier/models"
 	"strconv"
@@ -12,6 +13,10 @@ import (
 	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
+)
+
+const (
+	MAX_PROCESSING_TIME = 5 * time.Second
 )
 
 var (
@@ -104,14 +109,14 @@ func NewMongoQueue(database, user, password, host string, port, timeout, poolSiz
 func (mq *MongoQueue) Put(ctx context.Context, msg *models.Message) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.Info("Inserting new notification in the mongo")
-	_, err := mq.collection.Upsert(bson.M{"chat_id": msg.Chat.ID},
+	_, err := mq.collection.Upsert(
+		bson.M{"chat_id": msg.Chat.ID},
 		bson.M{
 			"$set": bson.M{"chat_id": msg.Chat.ID},
 			"$push": bson.M{"msgs": bson.M{
-				"created_at":    time.Now(),
-				"dispatched_at": nil,
-				"message_id":    msg.ID,
-				"payload":       msg,
+				"created_at": time.Now(),
+				"message_id": msg.ID,
+				"payload":    msg,
 			}},
 		})
 	if err != nil {
@@ -130,9 +135,17 @@ func (mq *MongoQueue) GetNext() (*models.Message, bool) {
 		if atomic.LoadInt32(&mq.readClosed) == 1 {
 			return nil, false
 		}
+		dispatchAtKey := "msgs.0.dispatched_at"
+
 		model := &models.Message{}
-		_, err := mq.collection.Find(bson.M{"readyat": bson.M{"$lt": time.Now()}}).Sort("readyat").Limit(1).Apply(
-			mgo.Change{Remove: true}, model)
+		currentTime := time.Now()
+		_, err := mq.collection.Find(bson.M{
+			"msgs": bson.M{"$gt": []interface{}{}},
+			"$or": []bson.M{
+				{dispatchAtKey: bson.M{"$exists": false}},
+				{dispatchAtKey: bson.M{"$lt": currentTime.Add(-MAX_PROCESSING_TIME)}},
+			}}).Sort("msgs.0.created_at").Apply(
+			mgo.Change{Update: bson.M{"$set": bson.M{dispatchAtKey: currentTime}}}, model)
 		if err != nil {
 			if err != mgo.ErrNotFound {
 				gLogger.Errorf("Cannot fetch record from mongo: %s", err)
@@ -146,5 +159,14 @@ func (mq *MongoQueue) GetNext() (*models.Message, bool) {
 }
 
 func (mq *MongoQueue) Remove(ctx context.Context, msg *models.Message) error {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "message_id": msg.ID}).Info("Removing message from the mongo")
+	err := mq.collection.Update(
+		bson.M{"chat_id": msg.Chat.ID, "msgs.0.message_id": msg.ID},
+		bson.M{"$pop": bson.M{"msgs": -1}},
+	)
+	if err != nil {
+		return errors.Wrap(err, "removing failed")
+	}
 	return nil
 }
