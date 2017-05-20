@@ -17,8 +17,8 @@ type ServiceConfig struct {
 	SenderWorkerNum   int               `json:"sender_workers_num"`
 	NotifyYourself    bool              `json:"notify_yourself"`
 	Neo               *DatabaseSettings `json:"neo"`
-	MongoNotification *DatabaseSettings `json:"mongo_notification"`
-	MongoMessages     *DatabaseSettings `json:"mongo_messages"`
+	MongoNotification *DatabaseQueue    `json:"mongo_notification"`
+	MongoMessages     *DatabaseQueue    `json:"mongo_messages"`
 	Telegram          *TelegramSettings `json:"telegram"`
 	TelegramPolling   *TelegramPolling  `json:"telegram_polling"`
 }

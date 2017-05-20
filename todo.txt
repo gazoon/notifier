@@ -2,5 +2,5 @@
 7. Separate queue Producer and Consumer implementations?
 8. get rid of config singleton?
 9. add dynamic log level
-10. add base db queue class
 11. make message id unique
+12. complete business logic in the in-memory messages queue

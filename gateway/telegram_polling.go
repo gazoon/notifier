@@ -6,13 +6,13 @@ import (
 	"notifier/models"
 	"time"
 
-	"notifier/messages_queue"
 	"notifier/tracing"
 
 	"context"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/pkg/errors"
+	"notifier/queue/messages"
 )
 
 var (

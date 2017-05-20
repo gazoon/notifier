@@ -6,7 +6,7 @@ import (
 	"notifier/logging"
 	"notifier/messenger"
 	"notifier/models"
-	"notifier/notifications_queue"
+	"notifier/queue/notifications"
 	"sync"
 )
 

@@ -6,14 +6,15 @@ import (
 	"notifier/gateway"
 	"notifier/logging"
 	"notifier/messenger"
-	"notifier/notifications_queue"
 	"notifier/storage"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"notifier/messages_queue"
+	"notifier/queue/messages"
 	"notifier/sender"
+
+	"notifier/queue/notifications"
 
 	"github.com/pkg/errors"
 )
@@ -35,14 +36,14 @@ func Run(confPath string) {
 	gLogger.Info("Initializing mongo messages queue")
 	incomingMongoQueue, err := msgsqueue.NewMongoQueue(conf.MongoMessages.Database, conf.MongoMessages.User,
 		conf.MongoMessages.Password, conf.MongoMessages.Host, conf.MongoMessages.Port, conf.MongoMessages.Timeout,
-		conf.MongoMessages.PoolSize)
+		conf.MongoMessages.PoolSize, conf.MongoMessages.FetchDelay)
 	if err != nil {
 		panic(errors.Wrap(err, "mongo messages queue"))
 	}
 	gLogger.Info("Initializing mongo notification queue")
 	outgoingMongoQueue, err := notifqueue.NewMongoQueue(conf.MongoNotification.Database, conf.MongoNotification.User,
 		conf.MongoNotification.Password, conf.MongoNotification.Host, conf.MongoNotification.Port,
-		conf.MongoNotification.Timeout, conf.MongoNotification.PoolSize)
+		conf.MongoNotification.Timeout, conf.MongoNotification.PoolSize, conf.MongoNotification.FetchDelay)
 	if err != nil {
 		panic(errors.Wrap(err, "mongo notification queue"))
 	}

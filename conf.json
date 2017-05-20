@@ -25,7 +25,8 @@
     "user": "",
     "password": "",
     "timeout": 1,
-    "pool_size": 8
+    "pool_size": 8,
+    "fetch_delay": 100
   },
   "mongo_messages": {
     "database": "local",
@@ -34,7 +35,8 @@
     "user": "",
     "password": "",
     "timeout": 1,
-    "pool_size": 8
+    "pool_size": 10,
+    "fetch_delay": 50
   },
   "bot_workers_num": 1,
   "notify_yourself": true,

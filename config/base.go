@@ -22,6 +22,11 @@ type DatabaseSettings struct {
 	PoolSize int    `json:"pool_size"`
 }
 
+type DatabaseQueue struct {
+	DatabaseSettings `json:",inline"`
+	FetchDelay       int `json:"fetch_delay"`
+}
+
 type TelegramSettings struct {
 	APIToken    string `json:"api_token"`
 	BotName     string `json:"bot_name"`

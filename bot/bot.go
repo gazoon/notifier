@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"notifier/config"
 	"notifier/logging"
-	"notifier/messages_queue"
 	"notifier/messenger"
 	"notifier/models"
 	"notifier/storage"
@@ -13,9 +12,9 @@ import (
 	"strings"
 	"sync"
 
-	"notifier/notifications_queue"
-
 	log "github.com/Sirupsen/logrus"
+	"notifier/queue/messages"
+	"notifier/queue/notifications"
 )
 
 const (
