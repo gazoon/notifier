@@ -2,13 +2,15 @@ package msgsqueue
 
 import (
 	"context"
-	log "github.com/Sirupsen/logrus"
 	"notifier/logging"
 	"notifier/models"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
+
+	"notifier/mongo"
 
 	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2"
@@ -72,6 +74,7 @@ func (mq *InMemoryQueue) Put(ctx context.Context, msg *models.Message) error {
 	mq.storage = append(mq.storage, msg)
 	return nil
 }
+
 func (mq *InMemoryQueue) Remove(ctx context.Context, msg *models.Message) error {
 	return nil
 }
@@ -81,59 +84,41 @@ func (mq *InMemoryQueue) StopGivingMsgs() {
 }
 
 type MongoQueue struct {
-	session    *mgo.Session
-	db         *mgo.Database
-	collection *mgo.Collection
+	client     *mongo.Client
 	readClosed int32
 	fetchDelay time.Duration
 }
 
-type MongoMessage struct {
+type mongoMessage struct {
 	models.Message `bson:",inline"`
 	CreatedAt      time.Time  `bson:"created_at"`
 	DispatchedAt   *time.Time `bson:"dispatched_at,omitempty"`
 }
 
-func (m MongoMessage) String() string {
+func (m mongoMessage) String() string {
 	return logging.ObjToString(&m)
 }
 
 func NewMongoQueue(database, user, password, host string, port, timeout, poolSize int) (*MongoQueue, error) {
-	session, err := mgo.DialWithInfo(&mgo.DialInfo{
-		Addrs:     []string{host + ":" + strconv.Itoa(port)},
-		Database:  database,
-		Username:  user,
-		Password:  password,
-		Timeout:   time.Duration(timeout) * time.Second,
-		PoolLimit: poolSize,
-	})
+	client, err := mongo.NewClient(database, mongoCollection, user, password, host, port, timeout, poolSize)
 	if err != nil {
-		return nil, errors.Wrap(err, "dialing failed")
+		return nil, errors.Wrap(err, "mongo initialization failed")
 	}
-	session.SetSafe(&mgo.Safe{WMode: "majority", J: true, WTimeout: timeout * 1000})
-	session.SetMode(mgo.Eventual, true)
-	db := session.DB("")
-	collection := db.C(mongoCollection)
-	return &MongoQueue{session: session, db: db, collection: collection}, nil
+	return &MongoQueue{client: client, fetchDelay: time.Millisecond * 50}, nil
 }
 
 func (mq *MongoQueue) Put(ctx context.Context, msg *models.Message) error {
-	//logger := logging.FromContextAndBase(ctx, gLogger)
-	//logger.Info("Inserting new notification in the mongo")
-	_, err := mq.collection.Upsert(
+	err := mq.client.Upsert(ctx,
 		bson.M{"chat_id": msg.Chat.ID},
 		bson.M{
 			"$set": bson.M{"chat_id": msg.Chat.ID},
-			"$push": bson.M{"msgs": &MongoMessage{
+			"$push": bson.M{"msgs": &mongoMessage{
 				Message:      *msg,
 				CreatedAt:    time.Now(),
 				DispatchedAt: nil,
 			}},
 		})
-	if err != nil {
-		return errors.Wrap(err, "inserting failed")
-	}
-	return nil
+	return err
 }
 
 func (mq *MongoQueue) StopGivingMsgs() {
@@ -141,27 +126,29 @@ func (mq *MongoQueue) StopGivingMsgs() {
 }
 
 func (mq *MongoQueue) GetNext() (*models.Message, bool) {
-	//gLogger.Info("Inserting new notification in the mongo")
 	for {
 		if atomic.LoadInt32(&mq.readClosed) == 1 {
 			return nil, false
 		}
-		dispatchAtKey := "msgs.0.dispatched_at"
 
 		var doc struct {
-			Msgs []*MongoMessage `bson:"msgs"`
+			Msgs []*mongoMessage `bson:"msgs"`
 		}
+		dispatchAtKey := "msgs.0.dispatched_at"
 		currentTime := time.Now()
-		_, err := mq.collection.Find(bson.M{
-			"msgs": bson.M{"$gt": []interface{}{}},
-			"$or": []bson.M{
-				{dispatchAtKey: bson.M{"$exists": false}},
-				{dispatchAtKey: bson.M{"$lt": currentTime.Add(-MAX_PROCESSING_TIME)}},
-			}}).Sort("msgs.0.created_at").Limit(1).Apply(
-			mgo.Change{Update: bson.M{"$set": bson.M{dispatchAtKey: currentTime}}}, &doc)
+		err := mq.client.FindAndModify(context.Background(),
+			bson.M{
+				"msgs": bson.M{"$gt": []interface{}{}},
+				"$or": []bson.M{
+					{dispatchAtKey: bson.M{"$exists": false}},
+					{dispatchAtKey: bson.M{"$lt": currentTime.Add(-MAX_PROCESSING_TIME)}},
+				}},
+			"msgs.0.created_at",
+			mgo.Change{Update: bson.M{"$set": bson.M{dispatchAtKey: currentTime}}},
+			&doc)
 		if err != nil {
 			if err != mgo.ErrNotFound {
-				gLogger.Errorf("Cannot fetch record from mongo: %s", err)
+				gLogger.Errorf("Cannot fetch document from mongo: %s", err)
 			}
 			time.Sleep(mq.fetchDelay)
 			continue
@@ -177,7 +164,7 @@ func (mq *MongoQueue) GetNext() (*models.Message, bool) {
 		if msg.DispatchedAt != nil {
 			logger.WithFields(log.Fields{"message_id": msg.ID, "chat_id": msg.Chat.ID}).
 				Warn("Message already has been dispatched, removing")
-			err := mq.removeMessage(msg.Chat.ID, msg.ID)
+			err := mq.removeMessage(context.Background(), msg.Chat.ID, msg.ID)
 			if err != nil {
 				logger.Errorf("Cannot remove stuck message: %s", err)
 			}
@@ -187,18 +174,15 @@ func (mq *MongoQueue) GetNext() (*models.Message, bool) {
 		return &msg.Message, true
 	}
 }
-func (mq *MongoQueue) removeMessage(chatID, messageID int) error {
-	err := mq.collection.Update(
+
+func (mq *MongoQueue) removeMessage(ctx context.Context, chatID, messageID int) error {
+	err := mq.client.Update(ctx,
 		bson.M{"chat_id": chatID, "msgs.0.message_id": messageID},
 		bson.M{"$pop": bson.M{"msgs": -1}},
 	)
-	if err != nil {
-		return errors.Wrap(err, "removing failed")
-	}
-	return nil
+	return err
 }
+
 func (mq *MongoQueue) Remove(ctx context.Context, msg *models.Message) error {
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "message_id": msg.ID}).Info("Removing message from the mongo")
-	return mq.removeMessage(msg.Chat.ID, msg.ID)
+	return mq.removeMessage(ctx, msg.Chat.ID, msg.ID)
 }

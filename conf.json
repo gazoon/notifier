@@ -39,7 +39,7 @@
   "bot_workers_num": 1,
   "notify_yourself": true,
   "sender_workers_num": 1,
-  "log_level": "debug",
+  "log_level": "info",
   "service_name": "bot",
   "server_id": "228"
 }
