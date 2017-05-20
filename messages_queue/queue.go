@@ -85,6 +85,17 @@ type MongoQueue struct {
 	db         *mgo.Database
 	collection *mgo.Collection
 	readClosed int32
+	fetchDelay time.Duration
+}
+
+type MongoMessage struct {
+	models.Message `bson:",inline"`
+	CreatedAt      time.Time  `bson:"created_at"`
+	DispatchedAt   *time.Time `bson:"dispatched_at,omitempty"`
+}
+
+func (m MongoMessage) String() string {
+	return logging.ObjToString(&m)
 }
 
 func NewMongoQueue(database, user, password, host string, port, timeout, poolSize int) (*MongoQueue, error) {
@@ -107,16 +118,16 @@ func NewMongoQueue(database, user, password, host string, port, timeout, poolSiz
 }
 
 func (mq *MongoQueue) Put(ctx context.Context, msg *models.Message) error {
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.Info("Inserting new notification in the mongo")
+	//logger := logging.FromContextAndBase(ctx, gLogger)
+	//logger.Info("Inserting new notification in the mongo")
 	_, err := mq.collection.Upsert(
 		bson.M{"chat_id": msg.Chat.ID},
 		bson.M{
 			"$set": bson.M{"chat_id": msg.Chat.ID},
-			"$push": bson.M{"msgs": bson.M{
-				"created_at": time.Now(),
-				"message_id": msg.ID,
-				"payload":    msg,
+			"$push": bson.M{"msgs": &MongoMessage{
+				Message:      *msg,
+				CreatedAt:    time.Now(),
+				DispatchedAt: nil,
 			}},
 		})
 	if err != nil {
@@ -130,43 +141,64 @@ func (mq *MongoQueue) StopGivingMsgs() {
 }
 
 func (mq *MongoQueue) GetNext() (*models.Message, bool) {
-	gLogger.Info("Inserting new notification in the mongo")
+	//gLogger.Info("Inserting new notification in the mongo")
 	for {
 		if atomic.LoadInt32(&mq.readClosed) == 1 {
 			return nil, false
 		}
 		dispatchAtKey := "msgs.0.dispatched_at"
 
-		model := &models.Message{}
+		var doc struct {
+			Msgs []*MongoMessage `bson:"msgs"`
+		}
 		currentTime := time.Now()
 		_, err := mq.collection.Find(bson.M{
 			"msgs": bson.M{"$gt": []interface{}{}},
 			"$or": []bson.M{
 				{dispatchAtKey: bson.M{"$exists": false}},
 				{dispatchAtKey: bson.M{"$lt": currentTime.Add(-MAX_PROCESSING_TIME)}},
-			}}).Sort("msgs.0.created_at").Apply(
-			mgo.Change{Update: bson.M{"$set": bson.M{dispatchAtKey: currentTime}}}, model)
+			}}).Sort("msgs.0.created_at").Limit(1).Apply(
+			mgo.Change{Update: bson.M{"$set": bson.M{dispatchAtKey: currentTime}}}, &doc)
 		if err != nil {
 			if err != mgo.ErrNotFound {
 				gLogger.Errorf("Cannot fetch record from mongo: %s", err)
 			}
-			const fetch_delay = 10
-			time.Sleep(time.Duration(fetch_delay) * time.Millisecond)
+			time.Sleep(mq.fetchDelay)
 			continue
 		}
-		return model, true
+		if len(doc.Msgs) == 0 {
+			gLogger.Error("Received document without messages")
+			time.Sleep(mq.fetchDelay)
+			continue
+		}
+		msg := doc.Msgs[0]
+		logger := logging.WithRequestIDAndBase(msg.RequestID, gLogger)
+		logger.WithField("mongo_message", msg).Info("Message retrieved from mongo")
+		if msg.DispatchedAt != nil {
+			logger.WithFields(log.Fields{"message_id": msg.ID, "chat_id": msg.Chat.ID}).
+				Warn("Message already has been dispatched, removing")
+			err := mq.removeMessage(msg.Chat.ID, msg.ID)
+			if err != nil {
+				logger.Errorf("Cannot remove stuck message: %s", err)
+			}
+			time.Sleep(mq.fetchDelay)
+			continue
+		}
+		return &msg.Message, true
 	}
 }
-
-func (mq *MongoQueue) Remove(ctx context.Context, msg *models.Message) error {
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "message_id": msg.ID}).Info("Removing message from the mongo")
+func (mq *MongoQueue) removeMessage(chatID, messageID int) error {
 	err := mq.collection.Update(
-		bson.M{"chat_id": msg.Chat.ID, "msgs.0.message_id": msg.ID},
+		bson.M{"chat_id": chatID, "msgs.0.message_id": messageID},
 		bson.M{"$pop": bson.M{"msgs": -1}},
 	)
 	if err != nil {
 		return errors.Wrap(err, "removing failed")
 	}
 	return nil
+}
+func (mq *MongoQueue) Remove(ctx context.Context, msg *models.Message) error {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "message_id": msg.ID}).Info("Removing message from the mongo")
+	return mq.removeMessage(msg.Chat.ID, msg.ID)
 }

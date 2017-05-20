@@ -5,6 +5,8 @@ import (
 
 	"context"
 
+	"encoding/json"
+	"fmt"
 	log "github.com/Sirupsen/logrus"
 )
 
@@ -91,4 +93,12 @@ func PatchStdLog(logLevelName, serviceName, serverID string) {
 	formatter := NewFormatter(serviceName, serverID)
 	log.SetLevel(logLevel)
 	log.SetFormatter(formatter)
+}
+
+func ObjToString(obj interface{}) string {
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return fmt.Sprintf("cannot represent as json: %s", err)
+	}
+	return string(b)
 }

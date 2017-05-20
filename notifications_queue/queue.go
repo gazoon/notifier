@@ -166,8 +166,8 @@ func NewMongoQueue(database, user, password, host string, port, timeout, poolSiz
 }
 
 func (mq *MongoQueue) Put(ctx context.Context, record *models.Notification) error {
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.Info("Inserting new notification in the mongo")
+	//logger := logging.FromContextAndBase(ctx, gLogger)
+	//logger.Info("Inserting new notification in the mongo")
 	err := mq.collection.Insert(record)
 	if err != nil {
 		return errors.Wrap(err, "inserting failed")
@@ -176,8 +176,8 @@ func (mq *MongoQueue) Put(ctx context.Context, record *models.Notification) erro
 }
 
 func (mq *MongoQueue) Discard(ctx context.Context, user *models.User, chatID int) error {
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.Info("Inserting new notification in the mongo")
+	//logger := logging.FromContextAndBase(ctx, gLogger)
+	//logger.Info("Inserting new notification in the mongo")
 	_, err := mq.collection.RemoveAll(bson.M{"user.id": user.ID, "chat_id": chatID})
 	if err != nil {
 		return errors.Wrap(err, "remove all failed")
@@ -190,7 +190,7 @@ func (mq *MongoQueue) StopGivingMsgs() {
 }
 
 func (mq *MongoQueue) GetNext() (*models.Notification, bool) {
-	gLogger.Info("Inserting new notification in the mongo")
+	//gLogger.Info("Inserting new notification in the mongo")
 	for {
 		if atomic.LoadInt32(&mq.readClosed) == 1 {
 			return nil, false

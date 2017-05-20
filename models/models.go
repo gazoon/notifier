@@ -1,11 +1,11 @@
 package models
 
 import (
-	"encoding/json"
-	"fmt"
-	"github.com/satori/go.uuid"
+	"notifier/logging"
 	"strings"
 	"time"
+
+	"github.com/satori/go.uuid"
 )
 
 type Message struct {
@@ -20,16 +20,8 @@ type Message struct {
 	IsBotAdded     bool   `bson:"is_bot_added"`
 }
 
-func toString(model interface{}) string {
-	b, err := json.Marshal(model)
-	if err != nil {
-		return fmt.Sprintf("cannot represent as json: %s", err)
-	}
-	return string(b)
-}
-
 func (m Message) String() string {
-	return toString(&m)
+	return logging.ObjToString(&m)
 }
 
 func (m *Message) ToCommand() (string, string) {
@@ -50,7 +42,7 @@ type Chat struct {
 }
 
 func (c Chat) String() string {
-	return toString(&c)
+	return logging.ObjToString(&c)
 }
 
 type User struct {
@@ -61,7 +53,7 @@ type User struct {
 }
 
 func (u User) String() string {
-	return toString(&u)
+	return logging.ObjToString(&u)
 }
 
 type Notification struct {
@@ -87,5 +79,5 @@ func NewNotification(user *User, msgID, chatID, readyDelay int, text, requestID 
 }
 
 func (n Notification) String() string {
-	return toString(&n)
+	return logging.ObjToString(&n)
 }

@@ -39,7 +39,6 @@ func Run(confPath string) {
 	if err != nil {
 		panic(errors.Wrap(err, "mongo messages queue"))
 	}
-	//outMemoryQueue := notifqueue.NewInMemory()
 	gLogger.Info("Initializing mongo notification queue")
 	outMongoQueue, err := notifqueue.NewMongoQueue(conf.MongoNotification.Database, conf.MongoNotification.User,
 		conf.MongoNotification.Password, conf.MongoNotification.Host, conf.MongoNotification.Port,

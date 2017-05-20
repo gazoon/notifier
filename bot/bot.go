@@ -14,8 +14,9 @@ import (
 	"strings"
 	"sync"
 
-	log "github.com/Sirupsen/logrus"
 	"notifier/notifications_queue"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 const (
@@ -84,7 +85,11 @@ func (b *Bot) Start() {
 				logger := logging.FromContextAndBase(ctx, gLogger)
 				logger.WithField("msg", msg).Info("Message received from incoming queue")
 				b.dispatchMessage(ctx, msg)
-				logger.Info("Send acknowledgement to the queue")
+				logger.Info("Finish processing, removing the message from the incoming queue")
+				err := b.messagesQueue.Remove(ctx, msg)
+				if err != nil {
+					logger.Errorf("Cannot remove processed message from the queue: %s", err)
+				}
 			}
 		}()
 	}
