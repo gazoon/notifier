@@ -8,7 +8,6 @@ import (
 	"notifier/messages_queue"
 	"notifier/messenger"
 	"notifier/models"
-	"notifier/neo"
 	"notifier/storage"
 	"notifier/tracing"
 	"strings"
@@ -50,19 +49,17 @@ type Handler func(ctx context.Context, msg *models.Message)
 type Bot struct {
 	messagesQueue     msgsqueue.Consumer
 	notificationQueue notifqueue.Producer
-	neoDB             neo.Client
 	messenger         messenger.Messenger
 	storage           storage.Storage
 	wg                sync.WaitGroup
 }
 
-func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer, neoDB neo.Client,
-	messenger messenger.Messenger, storage storage.Storage) *Bot {
+func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer, messenger messenger.Messenger,
+	storage storage.Storage) *Bot {
 
 	return &Bot{
 		messagesQueue:     messagesQueue,
 		notificationQueue: notificationQueue,
-		neoDB:             neoDB,
 		messenger:         messenger,
 		storage:           storage,
 	}

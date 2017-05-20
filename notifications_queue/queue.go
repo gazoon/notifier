@@ -148,7 +148,7 @@ type MongoQueue struct {
 func NewMongoQueue(database, user, password, host string, port, timeout, poolSize int) (*MongoQueue, error) {
 	client, err := mongo.NewClient(database, mongoCollection, user, password, host, port, timeout, poolSize)
 	if err != nil {
-		return nil, errors.Wrap(err, "mongo initialization failed")
+		return nil, err
 	}
 	return &MongoQueue{client: client}, nil
 }

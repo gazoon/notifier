@@ -10,6 +10,7 @@ import (
 
 	"github.com/johnnadratowski/golang-neo4j-bolt-driver/structures/graph"
 	"github.com/pkg/errors"
+	"notifier/config"
 	"reflect"
 )
 
@@ -29,11 +30,17 @@ type Storage interface {
 	FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.User, error)
 }
 type neoStorage struct {
-	client neo.Client
+	client *neo.Client
 }
 
-func NewNeoStorage(neoClient neo.Client) Storage {
-	return &neoStorage{neoClient}
+func NewNeoStorage() (Storage, error) {
+	conf := config.GetInstance()
+	neoDB, err := neo.NewClient(conf.Neo.Host, conf.Neo.Port, conf.Neo.User, conf.Neo.Password, conf.Neo.Timeout,
+		conf.Neo.PoolSize)
+	if err != nil {
+		return nil, err
+	}
+	return &neoStorage{neoDB}, nil
 }
 
 func (ns *neoStorage) CreateChat(ctx context.Context, chat *models.Chat) error {
