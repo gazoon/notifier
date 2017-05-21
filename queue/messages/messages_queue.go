@@ -165,10 +165,16 @@ func (mq *MongoQueue) GetNext() (*models.Message, bool) {
 }
 
 func (mq *MongoQueue) removeMessage(ctx context.Context, chatID, messageID int) error {
+	logger := logging.FromContextAndBase(ctx, gLogger)
 	err := mq.client.Update(ctx,
 		bson.M{"chat_id": chatID, "msgs.0.message_id": messageID},
 		bson.M{"$pop": bson.M{"msgs": -1}},
 	)
+	if err == mgo.ErrNotFound {
+		logger.WithFields(log.Fields{"chat_id": chatID, "message_id": messageID}).
+			Warn("Cannot remove message: message is already removed")
+		return nil
+	}
 	return err
 }
 

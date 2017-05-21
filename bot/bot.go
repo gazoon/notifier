@@ -12,9 +12,10 @@ import (
 	"strings"
 	"sync"
 
-	log "github.com/Sirupsen/logrus"
 	"notifier/queue/messages"
 	"notifier/queue/notifications"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 const (
@@ -22,12 +23,17 @@ const (
 	addLabelCmd       = "addLabel"
 	removeLabelCmd    = "removeLabel"
 	showLabelsCmd     = "showLabels"
+	setDelayCmd       = "notifDelay"
 )
 
 var (
-	gLogger      = logging.WithPackage("bot")
+	gLogger = logging.WithPackage("bot")
+
 	commandsText = fmt.Sprintf("Hi! I can do following for you:\n%s - Add new label for further notifications.\n"+
-		"%s - Delete label with provided name.\n%s - Show all your labels.", addLabelCmd, removeLabelCmd, showLabelsCmd)
+		"%s - Delete label with provided name.\n%s - Show all your labels.\n"+
+		"%s - Change the time, in seconds, after which I will send notification, default - 10 sec, 0 means notify immediately.",
+		addLabelCmd, removeLabelCmd, showLabelsCmd, setDelayCmd)
+
 	notificationTextTemplate   = "%s, you've been mentioned in the %s chat:"
 	errorText                  = "An internal bot error occurred."
 	noLabelsText               = "You don't have any labels yet."
@@ -43,25 +49,45 @@ func prepareContext(msg *models.Message) context.Context {
 	return ctx
 }
 
-type Handler func(ctx context.Context, msg *models.Message)
+type Handler struct {
+	Func func(ctx context.Context, msg *models.Message)
+	Name string
+}
 
 type Bot struct {
 	messagesQueue     msgsqueue.Consumer
 	notificationQueue notifqueue.Producer
 	messenger         messenger.Messenger
 	storage           storage.Storage
+	commandsRegister  map[string]*Handler
 	wg                sync.WaitGroup
 }
 
 func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer, messenger messenger.Messenger,
 	storage storage.Storage) *Bot {
 
-	return &Bot{
+	b := &Bot{
 		messagesQueue:     messagesQueue,
 		notificationQueue: notificationQueue,
 		messenger:         messenger,
 		storage:           storage,
 	}
+	b.commandsRegister = b.createCommandRegister()
+	return b
+}
+
+func (b *Bot) createCommandRegister() map[string]*Handler {
+	register := map[string]*Handler{
+		addLabelCmd:    {b.addUserLabelHandler, "addUserLabel"},
+		removeLabelCmd: {b.removeUserLabelHandler, "removeUserLabel"},
+		showLabelsCmd:  {b.showUserLabelsHandler, "showUserLabels"},
+		setDelayCmd:    {b.showUserLabelsHandler, "showUserLabels"},
+	}
+	for cmdName, handler := range register {
+		register[strings.ToLower(cmdName)] = handler
+		register[strings.ToUpper(cmdName)] = handler
+	}
+	return register
 }
 
 func (b *Bot) Start() {
@@ -101,45 +127,30 @@ func (b *Bot) Stop() {
 
 func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	var handlerFunc Handler
-	var handlerName string
+	var handler *Handler
 	if !msg.Chat.IsPrivate {
 		switch {
 		case msg.IsBotAdded:
-			handlerFunc = b.createChatHandler
-			handlerName = "createChat"
+			handler = &Handler{b.createChatHandler, "createChat"}
 		case msg.NewChatMember != nil:
-			handlerFunc = b.addChatMemberHandler
-			handlerName = "addChatMember"
+			handler = &Handler{b.addChatMemberHandler, "addChatMember"}
 		case msg.IsBotLeft:
-			handlerFunc = b.deleteChatHandler
-			handlerName = "deleteChat"
+			handler = &Handler{b.deleteChatHandler, "deleteChat"}
 		case msg.LeftChatMember != nil:
-			handlerFunc = b.removeChatMemberHandler
-			handlerName = "removeChatMember"
+			handler = &Handler{b.removeChatMemberHandler, "removeChatMember"}
 		default:
-			handlerFunc = b.regularMessageHandler
-			handlerName = "regularMessage"
+			handler = &Handler{b.regularMessageHandler, "regularMessage"}
 		}
 	} else {
 		cmd, _ := msg.ToCommand()
-		switch cmd {
-		case addLabelCmd:
-			handlerFunc = b.addUserLabelHandler
-			handlerName = "addUserLabel"
-		case removeLabelCmd:
-			handlerFunc = b.removeUserLabelHandler
-			handlerName = "removeUserLabel"
-		case showLabelsCmd:
-			handlerFunc = b.showUserLabelsHandler
-			handlerName = "showUserLabels"
-		default:
-			handlerFunc = b.commandsListHandler
-			handlerName = "commandsList"
+		var ok bool
+		handler, ok = b.commandsRegister[cmd]
+		if !ok {
+			handler = &Handler{b.commandsListHandler, "commandsList"}
 		}
 	}
-	logger.WithField("handler_name", handlerName).Info("Calling handler")
-	handlerFunc(ctx, msg)
+	logger.WithField("handler_name", handler.Name).Info("Calling handler")
+	handler.Func(ctx, msg)
 }
 
 func (b *Bot) createUser(ctx context.Context, user *models.User) bool {

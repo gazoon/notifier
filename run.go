@@ -43,7 +43,7 @@ func main() {
 	pollerService := gateway.NewTelegramPoller(incomingMongoQueue)
 	senderService := sender.New(outgoingMongoQueue, telegramMessenger)
 	gLogger.Info("Starting bot service")
-	//botService.Start()
+	botService.Start()
 	defer botService.Stop()
 	gLogger.Info("Starting sender service")
 	senderService.Start()
