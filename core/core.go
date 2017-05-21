@@ -13,6 +13,7 @@ import (
 	"notifier/queue/notifications"
 
 	"github.com/pkg/errors"
+	"reflect"
 )
 
 var (
@@ -61,4 +62,21 @@ func WaitingForShutdown() {
 	ch := make(chan os.Signal)
 	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
 	gLogger.Infof("Received shutdown signal: %s", <-ch)
+}
+
+type Indexable interface {
+	PrepareIndexes() error
+}
+
+func PrepareIndexes(databases ...Indexable) error {
+	for _, db := range databases {
+		indexerName := reflect.TypeOf(db)
+		gLogger.Infof("Creating indexes for %s", indexerName)
+		err := db.PrepareIndexes()
+		if err != nil {
+			return errors.Wrapf(err, "cannot prepare indexes, indexer: %s", indexerName)
+		}
+		gLogger.Infof("Indexes for %s created", indexerName)
+	}
+	return nil
 }

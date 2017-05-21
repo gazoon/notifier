@@ -13,6 +13,7 @@ import (
 
 	"notifier/queue"
 
+	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -176,12 +177,12 @@ func (mq *MongoQueue) PrepareIndexes() error {
 
 	err = mq.client.CreateIndex(false, "msgs.0.created_at", "msgs.0.dispatched_at")
 	if err != nil {
-		return err
+		return errors.Wrap(err, "create_at+dispatched_at index")
 	}
 
 	err = mq.client.CreateIndex(true, "chat_id")
 	if err != nil {
-		return err
+		return errors.Wrap(err, "chat_id unique index")
 	}
 
 	return nil

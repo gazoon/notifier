@@ -14,6 +14,7 @@ import (
 	"notifier/queue"
 
 	"github.com/emirpasic/gods/sets/treeset"
+	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -182,12 +183,12 @@ func (mq *MongoQueue) PrepareIndexes() error {
 
 	err = mq.client.CreateIndex(false, "ready_at")
 	if err != nil {
-		return err
+		return errors.Wrap(err, "ready_at index")
 	}
 
 	err = mq.client.CreateIndex(false, "user.id", "chat_id")
 	if err != nil {
-		return err
+		return errors.Wrap(err, "user.id+chat_id index")
 	}
 
 	return nil

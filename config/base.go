@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"github.com/pkg/errors"
 	"io/ioutil"
+	"flag"
 )
 
 type BaseConfig struct {
@@ -53,4 +54,8 @@ func FromJSONFile(path string, config interface{}) error {
 		return errors.Wrap(err, "cannot parse json file")
 	}
 	return nil
+}
+
+func FromCmdArgs(confPath *string) {
+	flag.StringVar(confPath, "conf", "conf.json", "Path to the config file")
 }

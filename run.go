@@ -8,6 +8,8 @@ import (
 	"notifier/logging"
 	"notifier/sender"
 
+	"notifier/config"
+
 	"github.com/pkg/errors"
 )
 
@@ -17,7 +19,7 @@ var (
 
 func main() {
 	var confPath string
-	flag.StringVar(&confPath, "conf", "conf.json", "Path to the config file")
+	config.FromCmdArgs(&confPath)
 	flag.Parse()
 
 	core.Initialization(confPath)

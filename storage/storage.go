@@ -182,12 +182,12 @@ func (ns *NeoStorage) PrepareIndexes() error {
 
 	err = conn.Exec(ctx, `CREATE CONSTRAINT ON (u:User) ASSERT u.uid IS UNIQUE`, nil)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "User uid index")
 	}
 
 	err = conn.Exec(ctx, `CREATE CONSTRAINT ON (c:Chat) ASSERT c.cid IS UNIQUE`, nil)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "Chat cid index")
 	}
 
 	return nil

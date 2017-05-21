@@ -3,5 +3,5 @@
 8. get rid of config singleton?
 9. add dynamic log level
 12. complete business logic in the in-memory messages queue
-13. add indexes
-14 handle duplicates
+14. handle duplicates
+15. folders refactoring
