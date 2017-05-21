@@ -25,6 +25,7 @@ const (
 var (
 	gLogger         = logging.WithPackage("incoming_queue")
 	mongoCollection = "messages"
+	DuplicateMsgErr = errors.New("message is already in the queue")
 )
 
 type Producer interface {
@@ -102,7 +103,7 @@ func NewMongoQueue(database, user, password, host string, port, timeout, poolSiz
 
 func (mq *MongoQueue) Put(ctx context.Context, msg *models.Message) error {
 	err := mq.client.Upsert(ctx,
-		bson.M{"chat_id": msg.Chat.ID},
+		bson.M{"chat_id": msg.Chat.ID, "msgs.message_id": bson.M{"$ne": msg.ID}},
 		bson.M{
 			"$set": bson.M{"chat_id": msg.Chat.ID},
 			"$push": bson.M{"msgs": &mongoMessage{
@@ -111,6 +112,9 @@ func (mq *MongoQueue) Put(ctx context.Context, msg *models.Message) error {
 				DispatchedAt: nil,
 			}},
 		})
+	if err == mongo.DuplicateKeyErr {
+		return DuplicateMsgErr
+	}
 	return err
 }
 

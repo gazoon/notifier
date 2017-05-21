@@ -5,3 +5,5 @@
 12. complete business logic in the in-memory messages queue
 14. handle duplicates
 15. folders refactoring
+16. db query retries
+17. add ability to disable/enable services start in the config

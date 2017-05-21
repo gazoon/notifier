@@ -12,7 +12,12 @@ import (
 )
 
 var (
-	gLogger = logging.WithPackage("mongo")
+	gLogger         = logging.WithPackage("mongo")
+	DuplicateKeyErr = errors.New("mongo: duplication key")
+)
+
+const (
+	DuplicateKeyCode = 11000
 )
 
 type Client struct {
@@ -46,6 +51,9 @@ func (c *Client) Upsert(ctx context.Context, query, update interface{}) error {
 	logger.WithFields(log.Fields{"query": query, "update": update}).Debug("Upserting document")
 	_, err := c.collection.Upsert(query, update)
 	if err != nil {
+		if isDuplicationErr(err) {
+			return DuplicateKeyErr
+		}
 		return errors.Wrap(err, "upsert failed")
 	}
 	return nil
@@ -86,6 +94,9 @@ func (c *Client) Insert(ctx context.Context, doc interface{}) error {
 	logger.WithField("document", doc).Debug("inserting document")
 	err := c.collection.Insert(doc)
 	if err != nil {
+		if isDuplicationErr(err) {
+			return DuplicateKeyErr
+		}
 		return errors.Wrap(err, "insert failed")
 	}
 	return nil
@@ -105,4 +116,9 @@ func (c *Client) CreateIndex(unique bool, keys ...string) error {
 	gLogger.WithFields(log.Fields{"index_key": keys, "unique": unique}).Info("Creating index")
 	err := c.collection.EnsureIndex(mgo.Index{Key: keys, Unique: unique})
 	return errors.Wrapf(err, "ensure index failed, key: %v", keys)
+}
+
+func isDuplicationErr(err error) bool {
+	mgoErr, ok := err.(*mgo.LastError)
+	return ok && mgoErr.Code == DuplicateKeyCode
 }
