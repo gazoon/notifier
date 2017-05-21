@@ -1,5 +1,3 @@
-2. add per user ready delay setting
-7. Separate queue Producer and Consumer implementations?
 8. get rid of config singleton?
 9. add dynamic log level
 12. complete business logic in the in-memory messages queue

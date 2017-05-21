@@ -25,6 +25,7 @@ type Storage interface {
 	AddUserToChat(ctx context.Context, chatID, userID int) error
 	CreateUser(ctx context.Context, user *models.User, labels []string) error
 	AddLabelToUser(ctx context.Context, userID int, label string) error
+	SetNotificationDelay(ctx context.Context, userID, delay int) error
 	RemoveLabelFromUser(ctx context.Context, userID int, label string) error
 	GetUserLabels(ctx context.Context, userID int) ([]string, error)
 	FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.User, error)
@@ -41,6 +42,17 @@ func NewNeoStorage() (*NeoStorage, error) {
 		return nil, err
 	}
 	return &NeoStorage{neoDB}, nil
+}
+
+func (ns *NeoStorage) SetNotificationDelay(ctx context.Context, userID, delay int) error {
+	conn, err := ns.client.GetConn()
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+	params := map[string]interface{}{"user_id": userID, "delay": delay}
+	err = conn.Exec(ctx, `MATCH (u: User {uid: {user_id}}) SET u.notification_delay={delay}`, params)
+	return err
 }
 
 func (ns *NeoStorage) CreateChat(ctx context.Context, chat *models.Chat) error {
@@ -99,8 +111,10 @@ func (ns *NeoStorage) CreateUser(ctx context.Context, user *models.User, labels 
 	for i := range labels {
 		labelsArg[i] = labels[i]
 	}
-	params := map[string]interface{}{"user_id": user.ID, "name": user.Name, "pmid": user.PMID, "labels": labelsArg}
-	err = conn.Exec(ctx, `MERGE (u: User {uid: {user_id}}) ON CREATE SET u.name={name},u.pmid={pmid},u.lbls={labels}`,
+	params := map[string]interface{}{"user_id": user.ID, "name": user.Name, "pmid": user.PMID, "labels": labelsArg,
+		"delay": user.NotificationDelay}
+	err = conn.Exec(ctx,
+		`MERGE (u: User {uid: {user_id}}) ON CREATE SET u.name={name},u.pmid={pmid},u.lbls={labels},u.notification_delay={delay}`,
 		params)
 	return err
 }
@@ -226,11 +240,18 @@ func rowsToUsers(rows [][]interface{}) ([]*models.User, error) {
 		userID, isUserIdOk := data["uid"].(int64)
 		PMID, isPmIdOk := data["pmid"].(int64)
 		name, isNameOk := data["name"].(string)
-		if !isUserIdOk || !isPmIdOk || !isNameOk {
-			return nil, errors.Errorf("expected uid-int64,pmid-int64,name-string properties, got %v %v %v",
-				reflect.TypeOf(data["uid"]), reflect.TypeOf(data["pmid"]), reflect.TypeOf(data["name"]))
+		notificationDelay, isDelayOk := data["notification_delay"].(int64)
+		if !isUserIdOk || !isPmIdOk || !isNameOk || !isDelayOk {
+			return nil, errors.Errorf("expected uid-int64,pmid-int64,name-string,delay-int64 properties, got %v %v %v %v",
+				reflect.TypeOf(data["uid"]), reflect.TypeOf(data["pmid"]),
+				reflect.TypeOf(data["name"]), reflect.TypeOf(data["notification_delay"]))
 		}
-		users = append(users, &models.User{ID: int(userID), PMID: int(PMID), Name: name})
+		users = append(users, &models.User{
+			ID:                int(userID),
+			PMID:              int(PMID),
+			Name:              name,
+			NotificationDelay: int(notificationDelay),
+		})
 	}
 	return users, nil
 }

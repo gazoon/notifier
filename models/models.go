@@ -46,10 +46,12 @@ func (c Chat) String() string {
 }
 
 type User struct {
-	ID       int    `bson:"id"`
-	PMID     int    `bson:"pmid"`
-	Username string `bson:"username"`
-	Name     string `bson:"name"`
+	ID int `bson:"id"`
+	//id of the private chat with the user
+	PMID              int    `bson:"pmid"`
+	Username          string `bson:"username"`
+	Name              string `bson:"name"`
+	NotificationDelay int    `bson:"-"`
 }
 
 func (u User) String() string {
@@ -66,12 +68,12 @@ type Notification struct {
 	ChatID    int       `bson:"chat_id"`
 }
 
-func NewNotification(user *User, msgID, chatID, readyDelay int, text, requestID string) *Notification {
+func NewNotification(user *User, msgID, chatID int, text, requestID string) *Notification {
 	return &Notification{
 		ID:        uuid.NewV4().String(),
 		RequestID: requestID,
 		Text:      text,
-		ReadyAt:   time.Now().Add(time.Second * time.Duration(readyDelay)),
+		ReadyAt:   time.Now().Add(time.Second * time.Duration(user.NotificationDelay)),
 		User:      user,
 		MessageID: msgID,
 		ChatID:    chatID,

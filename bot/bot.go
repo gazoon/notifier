@@ -16,14 +16,15 @@ import (
 	"notifier/queue/notifications"
 
 	log "github.com/Sirupsen/logrus"
+	"strconv"
 )
 
 const (
-	notificationDelay = 100
-	addLabelCmd       = "addLabel"
-	removeLabelCmd    = "removeLabel"
-	showLabelsCmd     = "showLabels"
-	setDelayCmd       = "notifDelay"
+	defaultNotificationDelay = 10
+	addLabelCmd              = "addLabel"
+	removeLabelCmd           = "removeLabel"
+	showLabelsCmd            = "showLabels"
+	setDelayCmd              = "notifDelay"
 )
 
 var (
@@ -34,11 +35,12 @@ var (
 		"%s - Change the time, in seconds, after which I will send notification, default - 10 sec, 0 means notify immediately.",
 		addLabelCmd, removeLabelCmd, showLabelsCmd, setDelayCmd)
 
-	notificationTextTemplate   = "%s, you've been mentioned in the %s chat:"
-	errorText                  = "An internal bot error occurred."
-	noLabelsText               = "You don't have any labels yet."
-	labelArgMissedTextTemplate = "You didn't provide a label\nEnter %s {label_name}"
-	okText                     = "OK."
+	notificationTextTemplate = "%s, you've been mentioned in the %s chat:"
+	errorText                = "An internal bot error occurred."
+	noLabelsText             = "You don't have any labels yet."
+	cmdArgMissedTextTemplate = "You didn't provide a value for {%s} argument\nEnter %s {%s}"
+	cmdBadArgTextTemplate    = "You provided a bad value for {%s} argument: %s."
+	okText                   = "OK."
 )
 
 func prepareContext(msg *models.Message) context.Context {
@@ -81,7 +83,7 @@ func (b *Bot) createCommandRegister() map[string]*Handler {
 		addLabelCmd:    {b.addUserLabelHandler, "addUserLabel"},
 		removeLabelCmd: {b.removeUserLabelHandler, "removeUserLabel"},
 		showLabelsCmd:  {b.showUserLabelsHandler, "showUserLabels"},
-		setDelayCmd:    {b.showUserLabelsHandler, "showUserLabels"},
+		setDelayCmd:    {b.setDelayHandler, "setNotificationDelay"},
 	}
 	for cmdName, handler := range register {
 		register[strings.ToLower(cmdName)] = handler
@@ -156,6 +158,7 @@ func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {
 func (b *Bot) createUser(ctx context.Context, user *models.User) bool {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	labelFromName := processText(user.Name)
+	user.NotificationDelay = defaultNotificationDelay
 	logger.WithField("user", user).Info("Saving user in the storage")
 	err := b.storage.CreateUser(ctx, user, []string{labelFromName})
 	if err != nil {
@@ -191,7 +194,7 @@ func (b *Bot) notifyUsers(ctx context.Context, users []*models.User, msg *models
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	for _, user := range users {
 		notificationText := fmt.Sprintf(notificationTextTemplate, user.Name, msg.Chat.Title)
-		notification := models.NewNotification(user, msg.ID, msg.Chat.ID, notificationDelay, notificationText,
+		notification := models.NewNotification(user, msg.ID, msg.Chat.ID, notificationText,
 			msg.RequestID)
 		logger.WithField("notification", notification).Info("Put notification to the queue")
 		err := b.notificationQueue.Put(ctx, notification)
@@ -222,13 +225,25 @@ func (b *Bot) sendOKMsg(ctx context.Context, user *models.User) {
 	}
 }
 
-func (b *Bot) sendMissLabelArgMsg(ctx context.Context, user *models.User, cmd string) {
+func (b *Bot) sendMissArgMsg(ctx context.Context, user *models.User, cmd, argName string) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("user", user).Infof("Call cmd %s without label arg, sending label missed message", cmd)
-	labelArgMissedText := fmt.Sprintf(labelArgMissedTextTemplate, cmd)
-	err := b.messenger.SendText(ctx, user.PMID, labelArgMissedText)
+	logger.WithField("user", user).Infof("Call cmd %s without arg %s, sending arg missed message", cmd, argName)
+	text := fmt.Sprintf(cmdArgMissedTextTemplate, argName, cmd, argName)
+	err := b.messenger.SendText(ctx, user.PMID, text)
 	if err != nil {
-		logger.Errorf("Cannot send label missed msg: %s", err)
+		logger.Errorf("Cannot send arg missed msg: %s", err)
+		return
+	}
+}
+
+func (b *Bot) sendBadArgMsg(ctx context.Context, user *models.User, cmd, argName, argValue string, argErr error) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithField("user", user).Infof("Call cmd %s arg %s with incorrect value=%s: %s, sending bad arg message",
+		cmd, argName, argValue, argErr)
+	text := fmt.Sprintf(cmdBadArgTextTemplate, argName, argErr)
+	err := b.messenger.SendText(ctx, user.PMID, text)
+	if err != nil {
+		logger.Errorf("Cannot send bad arg msg: %s", err)
 		return
 	}
 }
@@ -373,7 +388,7 @@ func (b *Bot) addUserLabelHandler(ctx context.Context, msg *models.Message) {
 	}
 
 	if label == "" {
-		b.sendMissLabelArgMsg(ctx, user, addLabelCmd)
+		b.sendMissArgMsg(ctx, user, addLabelCmd, "new_label")
 		return
 	}
 
@@ -400,7 +415,7 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
 	}
 
 	if label == "" {
-		b.sendMissLabelArgMsg(ctx, user, removeLabelCmd)
+		b.sendMissArgMsg(ctx, user, removeLabelCmd, "label_to_remove")
 		return
 	}
 
@@ -433,6 +448,38 @@ func (b *Bot) showUserLabelsHandler(ctx context.Context, msg *models.Message) {
 	}
 
 	b.sendUserLabels(ctx, user, labels)
+}
+
+func (b *Bot) setDelayHandler(ctx context.Context, msg *models.Message) {
+	user := msg.From
+	logger := logging.FromContextAndBase(ctx, gLogger)
+
+	if !b.createUser(ctx, user) {
+		b.sendErrorMsg(ctx, user)
+		return
+	}
+
+	_, delayArg := msg.ToCommand()
+	if delayArg == "" {
+		b.sendMissArgMsg(ctx, user, setDelayCmd, "notification_delay")
+		return
+	}
+	delay, err := strconv.Atoi(delayArg)
+	if err != nil {
+		b.sendBadArgMsg(ctx, user, setDelayCmd, "notification_delay", delayArg, err)
+		return
+	}
+
+	logger.WithFields(log.Fields{"user_id": user.ID, "notification_delay": delay}).
+		Info("Save custom notification delay value")
+	err = b.storage.SetNotificationDelay(ctx, user.ID, delay)
+	if err != nil {
+		logger.Errorf("Cannot save user notification delay in the storage: %s", err)
+		b.sendErrorMsg(ctx, user)
+		return
+	}
+
+	b.sendOKMsg(ctx, user)
 }
 
 func excludeUserFromList(users []*models.User, userToExclude *models.User) []*models.User {
