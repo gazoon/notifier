@@ -100,3 +100,9 @@ func (c *Client) Remove(ctx context.Context, query interface{}) error {
 	}
 	return nil
 }
+
+func (c *Client) CreateIndex(unique bool, keys ...string) error {
+	gLogger.WithFields(log.Fields{"index_key": keys, "unique": unique}).Info("Creating index")
+	err := c.collection.EnsureIndex(mgo.Index{Key: keys, Unique: unique})
+	return errors.Wrapf(err, "ensure index failed, key: %v", keys)
+}

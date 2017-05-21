@@ -29,21 +29,21 @@ type Storage interface {
 	GetUserLabels(ctx context.Context, userID int) ([]string, error)
 	FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.User, error)
 }
-type neoStorage struct {
+type NeoStorage struct {
 	client *neo.Client
 }
 
-func NewNeoStorage() (Storage, error) {
+func NewNeoStorage() (*NeoStorage, error) {
 	conf := config.GetInstance()
 	neoDB, err := neo.NewClient(conf.Neo.Host, conf.Neo.Port, conf.Neo.User, conf.Neo.Password, conf.Neo.Timeout,
 		conf.Neo.PoolSize)
 	if err != nil {
 		return nil, err
 	}
-	return &neoStorage{neoDB}, nil
+	return &NeoStorage{neoDB}, nil
 }
 
-func (ns *neoStorage) CreateChat(ctx context.Context, chat *models.Chat) error {
+func (ns *NeoStorage) CreateChat(ctx context.Context, chat *models.Chat) error {
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -54,7 +54,7 @@ func (ns *neoStorage) CreateChat(ctx context.Context, chat *models.Chat) error {
 	return err
 }
 
-func (ns *neoStorage) DeleteChat(ctx context.Context, chatID int) error {
+func (ns *NeoStorage) DeleteChat(ctx context.Context, chatID int) error {
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -65,7 +65,7 @@ func (ns *neoStorage) DeleteChat(ctx context.Context, chatID int) error {
 	return err
 }
 
-func (ns *neoStorage) RemoveUserFromChat(ctx context.Context, chatID, userID int) error {
+func (ns *NeoStorage) RemoveUserFromChat(ctx context.Context, chatID, userID int) error {
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -77,7 +77,7 @@ func (ns *neoStorage) RemoveUserFromChat(ctx context.Context, chatID, userID int
 	return err
 }
 
-func (ns *neoStorage) AddUserToChat(ctx context.Context, chatID, userID int) error {
+func (ns *NeoStorage) AddUserToChat(ctx context.Context, chatID, userID int) error {
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -89,7 +89,7 @@ func (ns *neoStorage) AddUserToChat(ctx context.Context, chatID, userID int) err
 	return err
 }
 
-func (ns *neoStorage) CreateUser(ctx context.Context, user *models.User, labels []string) error {
+func (ns *NeoStorage) CreateUser(ctx context.Context, user *models.User, labels []string) error {
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -105,7 +105,7 @@ func (ns *neoStorage) CreateUser(ctx context.Context, user *models.User, labels 
 	return err
 }
 
-func (ns *neoStorage) AddLabelToUser(ctx context.Context, userID int, label string) error {
+func (ns *NeoStorage) AddLabelToUser(ctx context.Context, userID int, label string) error {
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -117,7 +117,7 @@ func (ns *neoStorage) AddLabelToUser(ctx context.Context, userID int, label stri
 	return err
 }
 
-func (ns *neoStorage) RemoveLabelFromUser(ctx context.Context, userID int, label string) error {
+func (ns *NeoStorage) RemoveLabelFromUser(ctx context.Context, userID int, label string) error {
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return err
@@ -129,7 +129,7 @@ func (ns *neoStorage) RemoveLabelFromUser(ctx context.Context, userID int, label
 	return err
 }
 
-func (ns *neoStorage) GetUserLabels(ctx context.Context, userID int) ([]string, error) {
+func (ns *NeoStorage) GetUserLabels(ctx context.Context, userID int) ([]string, error) {
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return nil, err
@@ -152,7 +152,7 @@ func (ns *neoStorage) GetUserLabels(ctx context.Context, userID int) ([]string, 
 	return labels, nil
 }
 
-func (ns *neoStorage) FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.User, error) {
+func (ns *NeoStorage) FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.User, error) {
 	conn, err := ns.client.GetConn()
 	if err != nil {
 		return nil, err
@@ -170,6 +170,27 @@ func (ns *neoStorage) FindUsersByLabel(ctx context.Context, chatID int, text str
 		return nil, errors.Wrap(err, "cannot convert rows to list of User models")
 	}
 	return users, nil
+}
+
+func (ns *NeoStorage) PrepareIndexes() error {
+	ctx := context.Background()
+	conn, err := ns.client.GetConn()
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+
+	err = conn.Exec(ctx, `CREATE CONSTRAINT ON (u:User) ASSERT u.uid IS UNIQUE`, nil)
+	if err != nil {
+		return err
+	}
+
+	err = conn.Exec(ctx, `CREATE CONSTRAINT ON (c:Chat) ASSERT c.cid IS UNIQUE`, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func rowToLabels(row []interface{}) ([]string, error) {

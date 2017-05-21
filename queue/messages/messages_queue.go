@@ -170,3 +170,19 @@ func (mq *MongoQueue) removeMessage(ctx context.Context, chatID, messageID int) 
 func (mq *MongoQueue) Remove(ctx context.Context, msg *models.Message) error {
 	return mq.removeMessage(ctx, msg.Chat.ID, msg.ID)
 }
+
+func (mq *MongoQueue) PrepareIndexes() error {
+	var err error
+
+	err = mq.client.CreateIndex(false, "msgs.0.created_at", "msgs.0.dispatched_at")
+	if err != nil {
+		return err
+	}
+
+	err = mq.client.CreateIndex(true, "chat_id")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

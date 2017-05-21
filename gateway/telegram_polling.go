@@ -10,9 +10,10 @@ import (
 
 	"context"
 
+	"notifier/queue/messages"
+
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/pkg/errors"
-	"notifier/queue/messages"
 )
 
 var (

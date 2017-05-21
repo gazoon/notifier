@@ -2,5 +2,6 @@
 7. Separate queue Producer and Consumer implementations?
 8. get rid of config singleton?
 9. add dynamic log level
-11. make message id unique
 12. complete business logic in the in-memory messages queue
+13. add indexes
+14 handle duplicates
