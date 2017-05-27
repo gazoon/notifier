@@ -181,12 +181,12 @@ func (mq *MongoQueue) GetNext() (*models.Notification, bool) {
 func (mq *MongoQueue) PrepareIndexes() error {
 	var err error
 
-	err = mq.client.CreateIndex(false, "ready_at")
+	err = mq.client.CreateIndex(false, false, "ready_at")
 	if err != nil {
 		return errors.Wrap(err, "ready_at index")
 	}
 
-	err = mq.client.CreateIndex(false, "user.id", "chat_id")
+	err = mq.client.CreateIndex(false, false, "user.id", "chat_id")
 	if err != nil {
 		return errors.Wrap(err, "user.id+chat_id index")
 	}

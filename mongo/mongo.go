@@ -50,13 +50,10 @@ func (c *Client) Upsert(ctx context.Context, query, update interface{}) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithFields(log.Fields{"query": query, "update": update}).Debug("Upserting document")
 	_, err := c.collection.Upsert(query, update)
-	if err != nil {
-		if isDuplicationErr(err) {
-			return DuplicateKeyErr
-		}
-		return errors.Wrap(err, "upsert failed")
+	if isDuplicationErr(err) {
+		return DuplicateKeyErr
 	}
-	return nil
+	return errors.Wrap(err, "upsert failed")
 }
 
 func (c *Client) FindAndModify(ctx context.Context, query interface{}, sort string, change mgo.Change,
@@ -70,51 +67,45 @@ func (c *Client) FindAndModify(ctx context.Context, query interface{}, sort stri
 	q.Limit(1)
 	logger.WithFields(log.Fields{"query": query}).Debug("Find and modify document")
 	_, err := q.Apply(change, model)
-	if err != nil {
-		if err == mgo.ErrNotFound {
-			return err
-		}
-		return errors.Wrap(err, "findAndModify failed")
+	if err == mgo.ErrNotFound {
+		return err
 	}
-	return nil
+	return errors.Wrap(err, "findAndModify failed")
 }
 
 func (c *Client) Update(ctx context.Context, query, update interface{}) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithFields(log.Fields{"query": query, "update": update}).Debug("Updating document")
 	err := c.collection.Update(query, update)
-	if err != nil {
-		return errors.Wrap(err, "update failed")
+	if err == mgo.ErrNotFound {
+		return err
 	}
-	return nil
+	return errors.Wrap(err, "update failed")
 }
 
 func (c *Client) Insert(ctx context.Context, doc interface{}) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("document", doc).Debug("inserting document")
 	err := c.collection.Insert(doc)
-	if err != nil {
-		if isDuplicationErr(err) {
-			return DuplicateKeyErr
-		}
-		return errors.Wrap(err, "insert failed")
+	if isDuplicationErr(err) {
+		return DuplicateKeyErr
 	}
-	return nil
+	if err == mgo.ErrNotFound {
+		return err
+	}
+	return errors.Wrap(err, "insert failed")
 }
 
 func (c *Client) Remove(ctx context.Context, query interface{}) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("query", query).Debug("removing documents")
 	_, err := c.collection.RemoveAll(query)
-	if err != nil {
-		return errors.Wrap(err, "removeAll failed")
-	}
-	return nil
+	return errors.Wrap(err, "removeAll failed")
 }
 
-func (c *Client) CreateIndex(unique bool, keys ...string) error {
-	gLogger.WithFields(log.Fields{"index_key": keys, "unique": unique}).Info("Creating index")
-	err := c.collection.EnsureIndex(mgo.Index{Key: keys, Unique: unique})
+func (c *Client) CreateIndex(unique, sparse bool, keys ...string) error {
+	gLogger.WithFields(log.Fields{"index_key": keys, "unique": unique, "sparse": sparse}).Info("Creating index")
+	err := c.collection.EnsureIndex(mgo.Index{Key: keys, Unique: unique, Sparse: sparse})
 	return errors.Wrapf(err, "ensure index failed, key: %v", keys)
 }
 

@@ -101,7 +101,7 @@ func (b *Bot) Start() {
 			defer b.wg.Done()
 			for {
 				gLogger.Info("Fetching new msg from incoming queue")
-				msg, ok := b.messagesQueue.GetNext()
+				msg, processingID, ok := b.messagesQueue.GetNext()
 				if !ok {
 					return
 				}
@@ -109,10 +109,10 @@ func (b *Bot) Start() {
 				logger := logging.FromContextAndBase(ctx, gLogger)
 				logger.WithField("msg", msg).Info("Message received from incoming queue")
 				b.dispatchMessage(ctx, msg)
-				logger.Info("Finish processing, removing the message from the incoming queue")
-				err := b.messagesQueue.Remove(ctx, msg)
+				logger.WithField("processing_id", processingID).Info("Finish processing incoming message")
+				err := b.messagesQueue.FinishProcessing(ctx, processingID)
 				if err != nil {
-					logger.Errorf("Cannot remove processed message from the queue: %s", err)
+					logger.Errorf("Processing finishing failed: %s", err)
 				}
 			}
 		}()

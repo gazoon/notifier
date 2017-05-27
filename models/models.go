@@ -9,15 +9,16 @@ import (
 )
 
 type Message struct {
-	ID             int    `bson:"message_id"`
-	RequestID      string `bson:"request_id"`
-	Chat           *Chat  `bson:"chat"`
-	Text           string `bson:"text"`
-	From           *User  `bson:"from"`
-	NewChatMember  *User  `bson:"new_chat_member"`
-	LeftChatMember *User  `bson:"left_chat_member"`
-	IsBotLeft      bool   `bson:"is_bot_left"`
-	IsBotAdded     bool   `bson:"is_bot_added"`
+	ID             int       `bson:"message_id"`
+	RequestID      string    `bson:"request_id"`
+	Chat           *Chat     `bson:"chat"`
+	Text           string    `bson:"text"`
+	From           *User     `bson:"from"`
+	NewChatMember  *User     `bson:"new_chat_member"`
+	LeftChatMember *User     `bson:"left_chat_member"`
+	IsBotLeft      bool      `bson:"is_bot_left"`
+	IsBotAdded     bool      `bson:"is_bot_added"`
+	CreatedAt      time.Time `bson:"created_at"`
 }
 
 func (m Message) String() string {

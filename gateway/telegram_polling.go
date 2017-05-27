@@ -104,6 +104,7 @@ func (tp *TelegramPoller) processUpdate(update *tgbotapi.Update) {
 		return
 	}
 	msg.RequestID = requestID
+	msg.CreatedAt = time.Now()
 	logger.WithField("msg", msg).Info("Put a new msg in the incoming queue")
 	err = tp.queue.Put(ctx, msg)
 	if err == msgsqueue.DuplicateMsgErr {
