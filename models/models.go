@@ -4,8 +4,6 @@ import (
 	"notifier/logging"
 	"strings"
 	"time"
-
-	"github.com/satori/go.uuid"
 )
 
 type Message struct {
@@ -60,7 +58,6 @@ func (u User) String() string {
 }
 
 type Notification struct {
-	ID        string    `bson:"notification_id"`
 	RequestID string    `bson:"request_id"`
 	Text      string    `bson:"text"`
 	ReadyAt   time.Time `bson:"ready_at"`
@@ -71,7 +68,6 @@ type Notification struct {
 
 func NewNotification(user *User, msgID, chatID int, text, requestID string) *Notification {
 	return &Notification{
-		ID:        uuid.NewV4().String(),
 		RequestID: requestID,
 		Text:      text,
 		ReadyAt:   time.Now().Add(time.Second * time.Duration(user.NotificationDelay)),

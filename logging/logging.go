@@ -40,10 +40,17 @@ func WithRequestIDAndBase(requestID string, base *log.Entry) *log.Entry {
 }
 
 func (cf *customFormatter) Format(e *log.Entry) ([]byte, error) {
-	for field, value := range cf.additionalFields {
-		e.Data[field] = value
+	data := make(log.Fields, len(e.Data)+len(cf.additionalFields))
+	for k, v := range e.Data {
+		data[k] = v
 	}
-	return cf.logFormatter.Format(e)
+	for k, v := range cf.additionalFields {
+		data[k] = v
+	}
+	var newEntry = new(log.Entry)
+	*newEntry = *e
+	newEntry.Data = data
+	return cf.logFormatter.Format(newEntry)
 }
 
 func FromContext(ctx context.Context) *log.Entry {
@@ -61,6 +68,10 @@ func FromContextAndBase(ctx context.Context, base *log.Entry) *log.Entry {
 
 func NewContext(ctx context.Context, logger *log.Entry) context.Context {
 	return context.WithValue(ctx, loggerCtxKey, logger)
+}
+
+func NewContextBackground(logger *log.Entry) context.Context {
+	return NewContext(context.Background(), logger)
 }
 
 func NewFormatter(serviceName, serverID string) log.Formatter {

@@ -110,10 +110,7 @@ func (b *Bot) Start() {
 				logger.WithField("msg", msg).Info("Message received from incoming queue")
 				b.dispatchMessage(ctx, msg)
 				logger.WithField("processing_id", processingID).Info("Finish processing incoming message")
-				err := b.messagesQueue.FinishProcessing(ctx, processingID)
-				if err != nil {
-					logger.Errorf("Processing finishing failed: %s", err)
-				}
+				b.messagesQueue.FinishProcessing(ctx, processingID)
 			}
 		}()
 	}

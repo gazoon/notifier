@@ -38,9 +38,9 @@
     "pool_size": 10,
     "fetch_delay": 50
   },
-  "bot_workers_num": 1,
+  "bot_workers_num": 10,
   "notify_yourself": true,
-  "sender_workers_num": 1,
+  "sender_workers_num": 10,
   "log_level": "info",
   "service_name": "bot",
   "server_id": "228"

@@ -17,7 +17,7 @@ var (
 )
 
 const (
-	DuplicateKeyCode = 11000
+	duplicateKeyCode = 11000
 )
 
 type Client struct {
@@ -90,17 +90,14 @@ func (c *Client) Insert(ctx context.Context, doc interface{}) error {
 	if isDuplicationErr(err) {
 		return DuplicateKeyErr
 	}
-	if err == mgo.ErrNotFound {
-		return err
-	}
 	return errors.Wrap(err, "insert failed")
 }
 
-func (c *Client) Remove(ctx context.Context, query interface{}) error {
+func (c *Client) Remove(ctx context.Context, query interface{}) (int, error) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("query", query).Debug("removing documents")
-	_, err := c.collection.RemoveAll(query)
-	return errors.Wrap(err, "removeAll failed")
+	info, err := c.collection.RemoveAll(query)
+	return info.Removed, errors.Wrap(err, "removeAll failed")
 }
 
 func (c *Client) CreateIndex(unique, sparse bool, keys ...string) error {
@@ -111,5 +108,5 @@ func (c *Client) CreateIndex(unique, sparse bool, keys ...string) error {
 
 func isDuplicationErr(err error) bool {
 	mgoErr, ok := err.(*mgo.LastError)
-	return ok && mgoErr.Code == DuplicateKeyCode
+	return ok && mgoErr.Code == duplicateKeyCode
 }
