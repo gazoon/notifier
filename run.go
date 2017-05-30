@@ -56,6 +56,7 @@ func main() {
 	if err != nil {
 		panic(errors.Wrap(err, "cannot start poller"))
 	}
+	logging.StartLevelToggle(conf.Logging.TogglePath, conf.Logging.TogglePort)
 	gLogger.Info("Server successfully started")
 	core.WaitingForShutdown()
 }

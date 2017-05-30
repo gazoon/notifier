@@ -1,3 +1,2 @@
-9. add dynamic log level
 15. folders refactoring
 16. db query retries

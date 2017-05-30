@@ -21,6 +21,7 @@ type ServiceConfig struct {
 	MongoMessages     *DatabaseQueue    `json:"mongo_messages"`
 	Telegram          *TelegramSettings `json:"telegram"`
 	TelegramPolling   *TelegramPolling  `json:"telegram_polling"`
+	Logging           *Logging          `json:"logging"`
 }
 
 func Initialization(configPath string) {

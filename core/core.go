@@ -23,7 +23,7 @@ var (
 func Initialization(confPath string) {
 	config.Initialization(confPath)
 	conf := config.GetInstance()
-	logging.PatchStdLog(conf.LogLevel, conf.ServiceName, conf.ServerID)
+	logging.PatchStdLog(conf.Logging.DefaultLevel, conf.ServiceName, conf.ServerID)
 	gLogger.Info("Environment has been initialized")
 }
 

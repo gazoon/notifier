@@ -4,10 +4,15 @@ import (
 	"strings"
 
 	"context"
+	"net/http"
 
 	"encoding/json"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
+)
+
+var (
+	gLogger = WithPackage("logging")
 )
 
 type ContextKey int
@@ -94,7 +99,7 @@ func getLogLevel(logLevelName string) log.Level {
 	case "error":
 		logLevel = log.ErrorLevel
 	default:
-		logLevel = log.DebugLevel
+		logLevel = log.InfoLevel
 	}
 	return logLevel
 }
@@ -112,4 +117,19 @@ func ObjToString(obj interface{}) string {
 		return fmt.Sprintf("cannot represent as json: %s", err)
 	}
 	return string(b)
+}
+
+func StartLevelToggle(togglePath string, port int) {
+	mux := http.NewServeMux()
+	mux.HandleFunc(togglePath, func(w http.ResponseWriter, r *http.Request) {
+		levelName := r.FormValue("level")
+		level := getLogLevel(levelName)
+		gLogger.Infof("Toggle global log level from %s to %s", log.GetLevel(), level)
+		log.SetLevel(level)
+		fmt.Fprint(w, level)
+	})
+	gLogger.Infof("Toggle server is running on %d port, path=%s", port, togglePath)
+	go func() {
+		http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
+	}()
 }

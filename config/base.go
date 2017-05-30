@@ -2,13 +2,12 @@ package config
 
 import (
 	"encoding/json"
+	"flag"
 	"github.com/pkg/errors"
 	"io/ioutil"
-	"flag"
 )
 
 type BaseConfig struct {
-	LogLevel    string `json:"log_level"`
 	ServiceName string `json:"service_name"`
 	ServerID    string `json:"server_id"`
 }
@@ -39,6 +38,12 @@ type TelegramPolling struct {
 	PollTimeout int `json:"poll_timeout"`
 	ChannelSize int `json:"channel_size"`
 	RetryDelay  int `json:"retry_delay"`
+}
+
+type Logging struct {
+	DefaultLevel string `json:"default_level"`
+	TogglePort   int    `json:"toggle_port"`
+	TogglePath   string `json:"toggle_path"`
 }
 
 func FromJSONFile(path string, config interface{}) error {
