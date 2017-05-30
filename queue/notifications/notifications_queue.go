@@ -62,22 +62,29 @@ func (mq *MongoQueue) Discard(ctx context.Context, user *models.User, chatID int
 }
 
 func (mq *MongoQueue) GetNext() (*models.Notification, bool) {
-	result := &models.Notification{}
-	ok := mq.FetchLoop(func() bool {
-		err := mq.client.FindAndModify(context.Background(),
-			bson.M{"ready_at": bson.M{"$lt": time.Now()}},
-			"ready_at",
-			mgo.Change{Remove: true},
-			result)
-		if err != nil {
-			if err != mgo.ErrNotFound {
-				gLogger.Errorf("Cannot fetch documnt from mongo: %s", err)
-			}
-			return false
-		}
-		return true
+	var result *models.Notification
+	isStopped := mq.FetchLoop(func() bool {
+		var isFetched bool
+		result, isFetched = mq.tryGetNext()
+		return isFetched
 	})
-	return result, ok
+	return result, isStopped
+}
+
+func (mq *MongoQueue) tryGetNext() (*models.Notification, bool) {
+	result := &models.Notification{}
+	err := mq.client.FindAndModify(context.Background(),
+		bson.M{"ready_at": bson.M{"$lt": time.Now()}},
+		"ready_at",
+		mgo.Change{Remove: true},
+		result)
+	if err != nil {
+		if err != mgo.ErrNotFound {
+			gLogger.Errorf("Cannot fetch documnt from mongo: %s", err)
+		}
+		return nil, false
+	}
+	return result, true
 }
 
 func (mq *MongoQueue) PrepareIndexes() error {

@@ -42,14 +42,17 @@ func (s *Sender) Start() {
 				if !ok {
 					return
 				}
-				ctx := prepareContext(notification.RequestID)
-				logger := logging.FromContextAndBase(ctx, gLogger)
-				logger.WithField("notification", notification).Info("Notification received from outgoing queue")
-
-				s.sendNotification(ctx, notification)
+				s.onNotification(notification)
 			}
 		}()
 	}
+}
+
+func (s *Sender) onNotification(notification *models.Notification) {
+	ctx := prepareContext(notification.RequestID)
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithField("notification", notification).Info("Notification received from outgoing queue")
+	s.sendNotification(ctx, notification)
 }
 
 func (s *Sender) Stop() {

@@ -67,42 +67,47 @@ func (mq *MongoQueue) Put(ctx context.Context, msg *models.Message) error {
 func (mq *MongoQueue) GetNext() (*models.Message, string, bool) {
 	var result *models.Message
 	var processingID string
-	ok := mq.FetchLoop(func() bool {
-		var doc struct {
-			ChatID int               `bson:"chat_id"`
-			Msgs   []*models.Message `bson:"msgs"`
-		}
-		currentTime := time.Now()
-		processingID = newProcessingID()
-		err := mq.client.FindAndModify(context.Background(),
-			bson.M{
-				"$or": []bson.M{
-					{"processed_at": bson.M{"$exists": false}},
-					{"processed_at": bson.M{"$lt": currentTime.Add(-MAX_PROCESSING_TIME)}},
-				}},
-			"msgs.0.created_at",
-			mgo.Change{Update: bson.M{
-				"$set": bson.M{"processed_at": currentTime, "processing_id": processingID},
-				"$pop": bson.M{"msgs": -1},
-			}},
-			&doc)
-		if err != nil {
-			if err != mgo.ErrNotFound {
-				gLogger.Errorf("Cannot fetch document from mongo: %s", err)
-			}
-			return false
-		}
-		if len(doc.Msgs) == 0 {
-			logger := gLogger.WithField("chat_id", doc.ChatID)
-			ctx := logging.NewContextBackground(logger)
-			logger.Warn("Got document without messages, finish processing")
-			mq.FinishProcessing(ctx, processingID)
-			return false
-		}
-		result = doc.Msgs[0]
-		return true
+	isStopped := mq.FetchLoop(func() bool {
+		var isFetched bool
+		result, processingID, isFetched = mq.tryGetNext()
+		return isFetched
 	})
-	return result, processingID, ok
+	return result, processingID, isStopped
+}
+
+func (mq *MongoQueue) tryGetNext() (*models.Message, string, bool) {
+	var doc struct {
+		ChatID int               `bson:"chat_id"`
+		Msgs   []*models.Message `bson:"msgs"`
+	}
+	currentTime := time.Now()
+	processingID := newProcessingID()
+	err := mq.client.FindAndModify(context.Background(),
+		bson.M{
+			"$or": []bson.M{
+				{"processed_at": bson.M{"$exists": false}},
+				{"processed_at": bson.M{"$lt": currentTime.Add(-MAX_PROCESSING_TIME)}},
+			}},
+		"msgs.0.created_at",
+		mgo.Change{Update: bson.M{
+			"$set": bson.M{"processed_at": currentTime, "processing_id": processingID},
+			"$pop": bson.M{"msgs": -1},
+		}},
+		&doc)
+	if err != nil {
+		if err != mgo.ErrNotFound {
+			gLogger.Errorf("Cannot fetch document from mongo: %s", err)
+		}
+		return nil, "", false
+	}
+	if len(doc.Msgs) == 0 {
+		logger := gLogger.WithField("chat_id", doc.ChatID)
+		ctx := logging.NewContextBackground(logger)
+		logger.Warn("Got document without messages, finish processing")
+		mq.FinishProcessing(ctx, processingID)
+		return nil, "", false
+	}
+	return doc.Msgs[0], processingID, true
 }
 
 func (mq *MongoQueue) FinishProcessing(ctx context.Context, processingID string) {

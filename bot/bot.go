@@ -105,12 +105,7 @@ func (b *Bot) Start() {
 				if !ok {
 					return
 				}
-				ctx := prepareContext(msg)
-				logger := logging.FromContextAndBase(ctx, gLogger)
-				logger.WithField("msg", msg).Info("Message received from incoming queue")
-				b.dispatchMessage(ctx, msg)
-				logger.WithField("processing_id", processingID).Info("Finish processing incoming message")
-				b.messagesQueue.FinishProcessing(ctx, processingID)
+				b.onMessage(msg, processingID)
 			}
 		}()
 	}
@@ -122,6 +117,15 @@ func (b *Bot) Stop() {
 	gLogger.Info("Waiting until all workers will process the remaining messages")
 	b.wg.Wait()
 	gLogger.Info("All workers've been stopped")
+}
+
+func (b *Bot) onMessage(msg *models.Message, processingID string) {
+	ctx := prepareContext(msg)
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithField("msg", msg).Info("Message received from incoming queue")
+	b.dispatchMessage(ctx, msg)
+	logger.WithField("processing_id", processingID).Info("Finish processing incoming message")
+	b.messagesQueue.FinishProcessing(ctx, processingID)
 }
 
 func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {

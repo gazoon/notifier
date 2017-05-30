@@ -35,15 +35,29 @@ func transformUser(u *tgbotapi.User) *models.User {
 	}
 }
 
-func userIsBot(u *tgbotapi.User) bool {
+func prepareContext(requestID string) context.Context {
+	logger := logging.WithRequestID(requestID)
+	ctx := logging.NewContext(context.Background(), logger)
+	return ctx
+}
+
+type TelegramPoller struct {
+	queue   msgsqueue.Producer
+	botName string
+}
+
+func NewTelegramPoller(queue msgsqueue.Producer, botName string) *TelegramPoller {
+	return &TelegramPoller{queue: queue, botName: botName}
+}
+
+func (tp *TelegramPoller) userIsBot(u *tgbotapi.User) bool {
 	if u == nil {
 		return false
 	}
-	conf := config.GetInstance()
-	return u.UserName == conf.Telegram.BotName
+	return u.UserName == tp.botName
 }
 
-func updateMessageToModel(updateMessage *tgbotapi.Message) (*models.Message, error) {
+func (tp *TelegramPoller) updateMessageToModel(updateMessage *tgbotapi.Message) (*models.Message, error) {
 	if updateMessage.Chat == nil {
 		return nil, errors.New("message without chat")
 	}
@@ -60,8 +74,8 @@ func updateMessageToModel(updateMessage *tgbotapi.Message) (*models.Message, err
 			Title:     updateMessage.Chat.Title,
 		},
 		From:       transformUser(updateMessage.From),
-		IsBotAdded: userIsBot(updateMessage.NewChatMember),
-		IsBotLeft:  userIsBot(updateMessage.LeftChatMember),
+		IsBotAdded: tp.userIsBot(updateMessage.NewChatMember),
+		IsBotLeft:  tp.userIsBot(updateMessage.LeftChatMember),
 	}
 	if !message.IsBotAdded {
 		message.NewChatMember = transformUser(updateMessage.NewChatMember)
@@ -73,21 +87,6 @@ func updateMessageToModel(updateMessage *tgbotapi.Message) (*models.Message, err
 		message.From.PMID = chatID
 	}
 	return message, nil
-
-}
-
-func prepareContext(requestID string) context.Context {
-	logger := logging.WithRequestID(requestID)
-	ctx := logging.NewContext(context.Background(), logger)
-	return ctx
-}
-
-type TelegramPoller struct {
-	queue msgsqueue.Producer
-}
-
-func NewTelegramPoller(queue msgsqueue.Producer) *TelegramPoller {
-	return &TelegramPoller{queue}
 }
 
 func (tp *TelegramPoller) processUpdate(update *tgbotapi.Update) {
@@ -98,7 +97,7 @@ func (tp *TelegramPoller) processUpdate(update *tgbotapi.Update) {
 		logger.Debugf("Skip update without the Message field: %+v", update)
 		return
 	}
-	msg, err := updateMessageToModel(update.Message)
+	msg, err := tp.updateMessageToModel(update.Message)
 	if err != nil {
 		logger.Warnf("Cannot transform telegram update %+v to message: %s", update, err)
 		return

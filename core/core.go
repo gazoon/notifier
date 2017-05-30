@@ -47,7 +47,9 @@ func CreateMongoNotifications() (*notifqueue.MongoQueue, error) {
 
 func CreateNeoStorage() (*storage.NeoStorage, error) {
 	gLogger.Info("Initializing neo storage")
-	dataStorage, err := storage.NewNeoStorage()
+	conf := config.GetInstance()
+	dataStorage, err := storage.NewNeoStorage(conf.Neo.Host, conf.Neo.Port, conf.Neo.User, conf.Neo.Password,
+		conf.Neo.Timeout, conf.Neo.PoolSize)
 	return dataStorage, errors.Wrap(err, "neo storage")
 }
 

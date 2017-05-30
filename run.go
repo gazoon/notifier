@@ -23,6 +23,7 @@ func main() {
 	flag.Parse()
 
 	core.Initialization(confPath)
+	conf := config.GetInstance()
 	incomingQueue, err := core.CreateMongoMsgs()
 	if err != nil {
 		panic(err)
@@ -42,7 +43,7 @@ func main() {
 		panic(err)
 	}
 	botService := bot.New(incomingQueue, outgoingQueue, telegramMessenger, dataStorage)
-	pollerService := gateway.NewTelegramPoller(incomingQueue)
+	pollerService := gateway.NewTelegramPoller(incomingQueue, conf.Telegram.BotName)
 	senderService := sender.New(outgoingQueue, telegramMessenger)
 	gLogger.Info("Starting bot service")
 	botService.Start()

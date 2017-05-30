@@ -8,10 +8,10 @@ import (
 
 	"database/sql"
 
+	"reflect"
+
 	"github.com/johnnadratowski/golang-neo4j-bolt-driver/structures/graph"
 	"github.com/pkg/errors"
-	"notifier/config"
-	"reflect"
 )
 
 var (
@@ -34,10 +34,8 @@ type NeoStorage struct {
 	client *neo.Client
 }
 
-func NewNeoStorage() (*NeoStorage, error) {
-	conf := config.GetInstance()
-	neoDB, err := neo.NewClient(conf.Neo.Host, conf.Neo.Port, conf.Neo.User, conf.Neo.Password, conf.Neo.Timeout,
-		conf.Neo.PoolSize)
+func NewNeoStorage(host string, port int, user, password string, timeout, poolSize int) (*NeoStorage, error) {
+	neoDB, err := neo.NewClient(host, port, user, password, timeout, poolSize)
 	if err != nil {
 		return nil, err
 	}
