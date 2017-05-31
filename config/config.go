@@ -3,31 +3,33 @@ package config
 import (
 	"sync"
 
+	"flag"
 	"github.com/pkg/errors"
+	"notifier/libs/config"
 )
 
 var (
-	once           sync.Once
-	configInstance *ServiceConfig
+	once     sync.Once
+	instance *ServiceConfig
 )
 
 type ServiceConfig struct {
-	BaseConfig
-	BotWorkersNum     int               `json:"bot_workers_num"`
-	SenderWorkerNum   int               `json:"sender_workers_num"`
-	NotifyYourself    bool              `json:"notify_yourself"`
-	Neo               *DatabaseSettings `json:"neo"`
-	MongoNotification *DatabaseQueue    `json:"mongo_notification"`
-	MongoMessages     *DatabaseQueue    `json:"mongo_messages"`
-	Telegram          *TelegramSettings `json:"telegram"`
-	TelegramPolling   *TelegramPolling  `json:"telegram_polling"`
-	Logging           *Logging          `json:"logging"`
+	config.BaseConfig
+	BotWorkersNum     int                      `json:"bot_workers_num"`
+	SenderWorkerNum   int                      `json:"sender_workers_num"`
+	NotifyYourself    bool                     `json:"notify_yourself"`
+	Neo               *config.DatabaseSettings `json:"neo"`
+	MongoNotification *config.DatabaseQueue    `json:"mongo_notification"`
+	MongoMessages     *config.DatabaseQueue    `json:"mongo_messages"`
+	Telegram          *config.TelegramSettings `json:"telegram"`
+	TelegramPolling   *config.TelegramPolling  `json:"telegram_polling"`
+	Logging           *config.Logging          `json:"logging"`
 }
 
 func Initialization(configPath string) {
 	once.Do(func() {
-		configInstance = &ServiceConfig{}
-		err := FromJSONFile(configPath, configInstance)
+		instance = &ServiceConfig{}
+		err := config.FromJSONFile(configPath, instance)
 		if err != nil {
 			panic(errors.Wrap(err, "cannot load json config"))
 		}
@@ -35,5 +37,9 @@ func Initialization(configPath string) {
 }
 
 func GetInstance() *ServiceConfig {
-	return configInstance
+	return instance
+}
+
+func FromCmdArgs(confPath *string) {
+	flag.StringVar(confPath, "conf", "conf.json", "Path to the config file")
 }

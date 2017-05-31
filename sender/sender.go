@@ -3,10 +3,10 @@ package sender
 import (
 	"context"
 	"notifier/config"
-	"notifier/logging"
-	"notifier/messenger"
-	"notifier/models"
-	"notifier/queue/notifications"
+	"notifier/libs/logging"
+	"notifier/libs/messenger"
+	"notifier/libs/models"
+	"notifier/libs/queue/notifications"
 	"sync"
 )
 

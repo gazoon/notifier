@@ -2,18 +2,18 @@ package core
 
 import (
 	"notifier/config"
-	"notifier/logging"
-	"notifier/messenger"
+	"notifier/libs/messenger"
 	"notifier/storage"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"notifier/queue/messages"
-	"notifier/queue/notifications"
+	"notifier/libs/queue/messages"
+	"notifier/libs/queue/notifications"
 
 	"github.com/pkg/errors"
 	"reflect"
+	"notifier/libs/logging"
 )
 
 var (

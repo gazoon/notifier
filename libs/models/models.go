@@ -1,7 +1,8 @@
 package models
 
 import (
-	"notifier/logging"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -20,7 +21,7 @@ type Message struct {
 }
 
 func (m Message) String() string {
-	return logging.ObjToString(&m)
+	return ObjToString(&m)
 }
 
 func (m *Message) ToCommand() (string, string) {
@@ -41,7 +42,7 @@ type Chat struct {
 }
 
 func (c Chat) String() string {
-	return logging.ObjToString(&c)
+	return ObjToString(&c)
 }
 
 type User struct {
@@ -54,7 +55,7 @@ type User struct {
 }
 
 func (u User) String() string {
-	return logging.ObjToString(&u)
+	return ObjToString(&u)
 }
 
 type Notification struct {
@@ -78,5 +79,13 @@ func NewNotification(user *User, msgID, chatID int, text, requestID string) *Not
 }
 
 func (n Notification) String() string {
-	return logging.ObjToString(&n)
+	return ObjToString(&n)
+}
+
+func ObjToString(obj interface{}) string {
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return fmt.Sprintf("cannot represent as json: %s", err)
+	}
+	return string(b)
 }

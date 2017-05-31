@@ -2,7 +2,7 @@ package mongo
 
 import (
 	"context"
-	"notifier/logging"
+	"notifier/libs/logging"
 	"strconv"
 	"time"
 

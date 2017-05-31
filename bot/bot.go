@@ -4,19 +4,17 @@ import (
 	"context"
 	"fmt"
 	"notifier/config"
-	"notifier/logging"
-	"notifier/messenger"
-	"notifier/models"
+	"notifier/libs/logging"
+	"notifier/libs/messenger"
+	"notifier/libs/models"
+	"notifier/libs/queue/messages"
+	"notifier/libs/queue/notifications"
 	"notifier/storage"
-	"notifier/tracing"
+	"strconv"
 	"strings"
 	"sync"
 
-	"notifier/queue/messages"
-	"notifier/queue/notifications"
-
 	log "github.com/Sirupsen/logrus"
-	"strconv"
 )
 
 const (
@@ -44,8 +42,8 @@ var (
 )
 
 func prepareContext(msg *models.Message) context.Context {
+	ctx := context.Background()
 	requestID := msg.RequestID
-	ctx := tracing.NewContext(context.Background(), requestID)
 	logger := logging.WithRequestID(requestID)
 	ctx = logging.NewContext(ctx, logger)
 	return ctx

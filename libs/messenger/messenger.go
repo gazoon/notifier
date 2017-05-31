@@ -3,7 +3,7 @@ package messenger
 import (
 	"context"
 	"net/http"
-	"notifier/logging"
+	"notifier/libs/logging"
 	"time"
 
 	log "github.com/Sirupsen/logrus"

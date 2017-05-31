@@ -2,15 +2,15 @@ package notifqueue
 
 import (
 	"context"
-	"notifier/models"
+	"notifier/libs/models"
 	"sync"
 
 	"time"
 
-	"notifier/logging"
-	"notifier/mongo"
+	"notifier/libs/logging"
+	"notifier/libs/mongo"
 
-	"notifier/queue"
+	"notifier/libs/queue"
 
 	"github.com/emirpasic/gods/sets/treeset"
 	"github.com/pkg/errors"

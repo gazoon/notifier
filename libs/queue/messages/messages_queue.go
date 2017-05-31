@@ -2,15 +2,15 @@ package msgsqueue
 
 import (
 	"context"
-	"notifier/logging"
-	"notifier/models"
+	"notifier/libs/logging"
+	"notifier/libs/models"
 	"sync"
 	"time"
 
-	"notifier/mongo"
+	"notifier/libs/mongo"
 
 	"github.com/emirpasic/gods/sets/treeset"
-	"notifier/queue"
+	"notifier/libs/queue"
 
 	"github.com/pkg/errors"
 	"github.com/satori/go.uuid"

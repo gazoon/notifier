@@ -3,12 +3,11 @@ package main
 import (
 	"flag"
 	"notifier/bot"
+	"notifier/config"
 	"notifier/core"
 	"notifier/gateway"
-	"notifier/logging"
+	"notifier/libs/logging"
 	"notifier/sender"
-
-	"notifier/config"
 
 	"github.com/pkg/errors"
 )

@@ -6,9 +6,9 @@ import (
 	"context"
 	"net/http"
 
-	"encoding/json"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
+	"github.com/satori/go.uuid"
 )
 
 var (
@@ -29,6 +29,10 @@ const (
 type customFormatter struct {
 	logFormatter     log.Formatter
 	additionalFields log.Fields
+}
+
+func NewRequestID() string {
+	return uuid.NewV4().String()
 }
 
 func WithPackage(packageName string) *log.Entry {
@@ -111,13 +115,6 @@ func PatchStdLog(logLevelName, serviceName, serverID string) {
 	log.SetFormatter(formatter)
 }
 
-func ObjToString(obj interface{}) string {
-	b, err := json.Marshal(obj)
-	if err != nil {
-		return fmt.Sprintf("cannot represent as json: %s", err)
-	}
-	return string(b)
-}
 
 func StartLevelToggle(togglePath string, port int) {
 	mux := http.NewServeMux()

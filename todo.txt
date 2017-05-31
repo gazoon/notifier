@@ -1,2 +1,1 @@
-15. folders refactoring
 16. db query retries

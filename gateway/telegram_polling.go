@@ -2,15 +2,13 @@ package gateway
 
 import (
 	"notifier/config"
-	"notifier/logging"
-	"notifier/models"
+	"notifier/libs/logging"
+	"notifier/libs/models"
 	"time"
-
-	"notifier/tracing"
 
 	"context"
 
-	"notifier/queue/messages"
+	"notifier/libs/queue/messages"
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/pkg/errors"
@@ -90,7 +88,7 @@ func (tp *TelegramPoller) updateMessageToModel(updateMessage *tgbotapi.Message) 
 }
 
 func (tp *TelegramPoller) processUpdate(update *tgbotapi.Update) {
-	requestID := tracing.NewRequestID()
+	requestID := logging.NewRequestID()
 	ctx := prepareContext(requestID)
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	if update.Message == nil {

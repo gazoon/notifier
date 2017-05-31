@@ -2,9 +2,9 @@ package storage
 
 import (
 	"context"
-	"notifier/logging"
-	"notifier/models"
-	"notifier/neo"
+	"notifier/libs/logging"
+	"notifier/libs/models"
+	"notifier/libs/neo"
 
 	"database/sql"
 

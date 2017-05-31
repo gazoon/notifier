@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"notifier/logging"
+	"notifier/libs/logging"
 
 	log "github.com/Sirupsen/logrus"
 
