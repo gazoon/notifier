@@ -2,9 +2,8 @@ package config
 
 import (
 	"encoding/json"
-	"io/ioutil"
-
 	"github.com/pkg/errors"
+	"io/ioutil"
 )
 
 type BaseConfig struct {
@@ -13,13 +12,15 @@ type BaseConfig struct {
 }
 
 type DatabaseSettings struct {
-	Host     string `json:"host"`
-	Port     int    `json:"port"`
-	User     string `json:"user"`
-	Database string `json:"database"`
-	Password string `json:"password"`
-	Timeout  int    `json:"timeout"`
-	PoolSize int    `json:"pool_size"`
+	Host            string `json:"host"`
+	Port            int    `json:"port"`
+	User            string `json:"user"`
+	Database        string `json:"database"`
+	Password        string `json:"password"`
+	Timeout         int    `json:"timeout"`
+	PoolSize        int    `json:"pool_size"`
+	RetriesNum      int    `json:"retries_num"`
+	RetriesInterval int    `json:"retries_interval"`
 }
 
 type DatabaseQueue struct {

@@ -38,8 +38,10 @@ type MongoQueue struct {
 	*queue.BaseConsumer
 }
 
-func NewMongoQueue(database, user, password, host string, port, timeout, poolSize, fetchDelay int) (*MongoQueue, error) {
-	client, err := mongo.NewClient(database, mongoCollection, user, password, host, port, timeout, poolSize)
+func NewMongoQueue(database, user, password, host string, port, timeout, poolSize, retriesNum, retriesInterval,
+	fetchDelay int) (*MongoQueue, error) {
+	client, err := mongo.NewClient(database, mongoCollection, user, password, host, port, timeout, poolSize, retriesNum,
+		retriesInterval)
 	if err != nil {
 		return nil, err
 	}
@@ -47,10 +49,10 @@ func NewMongoQueue(database, user, password, host string, port, timeout, poolSiz
 }
 
 func (mq *MongoQueue) Put(ctx context.Context, record *models.Notification) error {
-	err := mq.client.Insert(ctx, record)
+	err := mq.client.Insert(ctx, true,record)
 	if err == mongo.DuplicateKeyErr {
 		logger := logging.FromContextAndBase(ctx, gLogger)
-		logger.WithField("record", record).Warn("Notification document with that id already saved in the mongo")
+		logger.WithField("record", record).Warn("Notification duplication")
 		return nil
 	}
 	return err
@@ -73,7 +75,7 @@ func (mq *MongoQueue) GetNext() (*models.Notification, bool) {
 
 func (mq *MongoQueue) tryGetNext() (*models.Notification, bool) {
 	result := &models.Notification{}
-	err := mq.client.FindAndModify(context.Background(),
+	err := mq.client.FindAndModify(context.Background(), false,
 		bson.M{"ready_at": bson.M{"$lt": time.Now()}},
 		"ready_at",
 		mgo.Change{Remove: true},
@@ -95,7 +97,7 @@ func (mq *MongoQueue) PrepareIndexes() error {
 		return errors.Wrap(err, "ready_at index")
 	}
 
-	err = mq.client.CreateIndex(false, false, "user.id", "chat_id")
+	err = mq.client.CreateIndex(true, false, "user.id", "chat_id", "message_id")
 	if err != nil {
 		return errors.Wrap(err, "user.id+chat_id index")
 	}

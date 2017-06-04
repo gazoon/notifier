@@ -12,8 +12,8 @@ import (
 	"notifier/libs/queue/notifications"
 
 	"github.com/pkg/errors"
-	"reflect"
 	"notifier/libs/logging"
+	"reflect"
 )
 
 var (
@@ -28,20 +28,18 @@ func Initialization(confPath string) {
 }
 
 func CreateMongoMsgs() (*msgsqueue.MongoQueue, error) {
-	conf := config.GetInstance()
+	conf := config.GetInstance().MongoMessages
 	gLogger.Info("Initializing mongo messages queue")
-	incomingMongoQueue, err := msgsqueue.NewMongoQueue(conf.MongoMessages.Database, conf.MongoMessages.User,
-		conf.MongoMessages.Password, conf.MongoMessages.Host, conf.MongoMessages.Port, conf.MongoMessages.Timeout,
-		conf.MongoMessages.PoolSize, conf.MongoMessages.FetchDelay)
+	incomingMongoQueue, err := msgsqueue.NewMongoQueue(conf.Database, conf.User, conf.Password, conf.Host, conf.Port,
+		conf.Timeout, conf.PoolSize, conf.RetriesNum, conf.RetriesInterval, conf.FetchDelay)
 	return incomingMongoQueue, errors.Wrap(err, "mongo messages queue")
 }
 
 func CreateMongoNotifications() (*notifqueue.MongoQueue, error) {
-	conf := config.GetInstance()
+	conf := config.GetInstance().MongoNotification
 	gLogger.Info("Initializing mongo notification queue")
-	outgoingMongoQueue, err := notifqueue.NewMongoQueue(conf.MongoNotification.Database, conf.MongoNotification.User,
-		conf.MongoNotification.Password, conf.MongoNotification.Host, conf.MongoNotification.Port,
-		conf.MongoNotification.Timeout, conf.MongoNotification.PoolSize, conf.MongoNotification.FetchDelay)
+	outgoingMongoQueue, err := notifqueue.NewMongoQueue(conf.Database, conf.User, conf.Password, conf.Host, conf.Port,
+		conf.Timeout, conf.PoolSize, conf.RetriesNum, conf.RetriesInterval, conf.FetchDelay)
 	return outgoingMongoQueue, errors.Wrap(err, "mongo notification queue")
 }
 

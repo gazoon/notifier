@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	MAX_PROCESSING_TIME = 5 * time.Second
+	MAX_PROCESSING_TIME = 8 * time.Second
 )
 
 var (
@@ -43,8 +43,10 @@ type MongoQueue struct {
 	*queue.BaseConsumer
 }
 
-func NewMongoQueue(database, user, password, host string, port, timeout, poolSize, fetchDelay int) (*MongoQueue, error) {
-	client, err := mongo.NewClient(database, mongoCollection, user, password, host, port, timeout, poolSize)
+func NewMongoQueue(database, user, password, host string, port, timeout, poolSize, retriesNum, retriesInterval,
+	fetchDelay int) (*MongoQueue, error) {
+	client, err := mongo.NewClient(database, mongoCollection, user, password, host, port, timeout, poolSize, retriesNum,
+		retriesInterval)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +54,7 @@ func NewMongoQueue(database, user, password, host string, port, timeout, poolSiz
 }
 
 func (mq *MongoQueue) Put(ctx context.Context, msg *models.Message) error {
-	err := mq.client.Upsert(ctx,
+	err := mq.client.Upsert(ctx, true,
 		bson.M{"chat_id": msg.Chat.ID, "msgs.message_id": bson.M{"$ne": msg.ID}},
 		bson.M{
 			"$set":  bson.M{"chat_id": msg.Chat.ID},
@@ -82,7 +84,7 @@ func (mq *MongoQueue) tryGetNext() (*models.Message, string, bool) {
 	}
 	currentTime := time.Now()
 	processingID := newProcessingID()
-	err := mq.client.FindAndModify(context.Background(),
+	err := mq.client.FindAndModify(context.Background(), false,
 		bson.M{
 			"$or": []bson.M{
 				{"processed_at": bson.M{"$exists": false}},
@@ -123,7 +125,7 @@ func (mq *MongoQueue) FinishProcessing(ctx context.Context, processingID string)
 		return
 	}
 	logger.Info("The document hasn't been removed, reset processing info")
-	err = mq.client.Update(ctx,
+	err = mq.client.Update(ctx, true,
 		bson.M{"processing_id": processingID},
 		bson.M{"$unset": bson.M{"processing_id": "", "processed_at": ""}},
 	)
