@@ -10,12 +10,15 @@ import (
 
 	neoDriver "github.com/johnnadratowski/golang-neo4j-bolt-driver"
 	"github.com/pkg/errors"
+	"time"
 )
 
 var gLogger = logging.WithPackage("neo")
 
 type Client struct {
-	driver neoDriver.DriverPool
+	driver          neoDriver.DriverPool
+	retriesInterval time.Duration
+	retriesNum      int
 }
 
 type Connection struct {
@@ -30,6 +33,12 @@ func (c *Client) GetConn() (*Connection, error) {
 	conn := &Connection{underlingConn}
 	return conn, nil
 }
+
+//type TransactionFunc func(conn Connection) error
+//
+//func (c *Client) Transaction(needRetry bool, work TransactionFunc) error{
+//
+//}
 
 func (c *Connection) Query(ctx context.Context, query string, params map[string]interface{}) ([][]interface{}, error) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
@@ -75,7 +84,9 @@ func buildConnectionStr(host string, port int, user, password string, timeout in
 	return uri
 }
 
-func NewClient(host string, port int, user, password string, timeout, poolSize int) (*Client, error) {
+func NewClient(host string, port int, user, password string, timeout, poolSize, retriesNum, retriesInterval int) (
+	*Client, error) {
+
 	connStr := buildConnectionStr(host, port, user, password, timeout)
 	gLogger.WithField("url", connStr).Info("Connecting to neo4j")
 	pool, err := neoDriver.NewDriverPool(connStr, poolSize)
@@ -89,5 +100,10 @@ func NewClient(host string, port int, user, password string, timeout, poolSize i
 	if err != nil {
 		return nil, errors.Wrap(err, "connection failed")
 	}
-	return &Client{pool}, nil
+	client := &Client{
+		driver:          pool,
+		retriesNum:      retriesNum,
+		retriesInterval: time.Duration(retriesInterval) * time.Millisecond,
+	}
+	return client, nil
 }

@@ -5,7 +5,9 @@
     "user": "neo4j",
     "password": "sudos",
     "timeout": 1,
-    "pool_size": 8
+    "pool_size": 8,
+    "retries_num": 3,
+    "retries_interval": 500
   },
   "telegram_polling": {
     "channel_size": 100,

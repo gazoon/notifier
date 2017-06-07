@@ -47,7 +47,7 @@ func CreateNeoStorage() (*storage.NeoStorage, error) {
 	gLogger.Info("Initializing neo storage")
 	conf := config.GetInstance()
 	dataStorage, err := storage.NewNeoStorage(conf.Neo.Host, conf.Neo.Port, conf.Neo.User, conf.Neo.Password,
-		conf.Neo.Timeout, conf.Neo.PoolSize)
+		conf.Neo.Timeout, conf.Neo.PoolSize, conf.Neo.RetriesNum, conf.Neo.RetriesInterval)
 	return dataStorage, errors.Wrap(err, "neo storage")
 }
 

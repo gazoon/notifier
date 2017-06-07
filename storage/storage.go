@@ -34,8 +34,10 @@ type NeoStorage struct {
 	client *neo.Client
 }
 
-func NewNeoStorage(host string, port int, user, password string, timeout, poolSize int) (*NeoStorage, error) {
-	neoDB, err := neo.NewClient(host, port, user, password, timeout, poolSize)
+func NewNeoStorage(host string, port int, user, password string, timeout, poolSize, retriesNum, retriesInterval int) (
+	*NeoStorage, error) {
+
+	neoDB, err := neo.NewClient(host, port, user, password, timeout, poolSize, retriesNum, retriesInterval)
 	if err != nil {
 		return nil, err
 	}
