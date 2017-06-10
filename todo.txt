@@ -1,2 +1,0 @@
-16. db query retries
-17. return db client interfaces, don't initialize db client inside a queue/store

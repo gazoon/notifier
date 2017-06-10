@@ -45,112 +45,66 @@ func NewNeoStorage(host string, port int, user, password string, timeout, poolSi
 }
 
 func (ns *NeoStorage) SetNotificationDelay(ctx context.Context, userID, delay int) error {
-	conn, err := ns.client.GetConn()
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
 	params := map[string]interface{}{"user_id": userID, "delay": delay}
-	err = conn.Exec(ctx, `MATCH (u: User {uid: {user_id}}) SET u.notification_delay={delay}`, params)
-	return err
+	return ns.client.ExecRetry(ctx, `MATCH (u: User {uid: {user_id}}) SET u.notification_delay={delay}`, params)
 }
 
 func (ns *NeoStorage) CreateChat(ctx context.Context, chat *models.Chat) error {
-	conn, err := ns.client.GetConn()
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
 	params := map[string]interface{}{"chat_id": chat.ID, "title": chat.Title}
-	err = conn.Exec(ctx, `MERGE (c: Chat {cid: {chat_id}}) ON CREATE SET c.title={title}`, params)
+	err := ns.client.ExecRetry(ctx, `MERGE (c: Chat {cid: {chat_id}}) ON CREATE SET c.title={title}`, params)
 	return err
 }
 
 func (ns *NeoStorage) DeleteChat(ctx context.Context, chatID int) error {
-	conn, err := ns.client.GetConn()
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
 	params := map[string]interface{}{"chat_id": chatID}
-	err = conn.Exec(ctx, `MATCH (c: Chat) WHERE c.cid={chat_id} DETACH DELETE c`, params)
+	err := ns.client.ExecRetry(ctx, `MATCH (c: Chat) WHERE c.cid={chat_id} DETACH DELETE c`, params)
 	return err
 }
 
 func (ns *NeoStorage) RemoveUserFromChat(ctx context.Context, chatID, userID int) error {
-	conn, err := ns.client.GetConn()
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
 	params := map[string]interface{}{"chat_id": chatID, "user_id": userID}
-	err = conn.Exec(ctx, `MATCH(u:User) -[m:Member]-> (c: Chat) WHERE u.uid={user_id} AND c.cid={chat_id} DELETE m`,
-		params)
+	err := ns.client.ExecRetry(ctx,
+		`MATCH(u:User) -[m:Member]-> (c: Chat) WHERE u.uid={user_id} AND c.cid={chat_id} DELETE m`, params)
 	return err
 }
 
 func (ns *NeoStorage) AddUserToChat(ctx context.Context, chatID, userID int) error {
-	conn, err := ns.client.GetConn()
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
 	params := map[string]interface{}{"chat_id": chatID, "user_id": userID}
-	err = conn.Exec(ctx,
+	err := ns.client.ExecRetry(ctx,
 		`MATCH(u:User), (c: Chat) WHERE u.uid={user_id} AND c.cid={chat_id} MERGE (u)-[:Member]->(c)`, params)
 	return err
 }
 
 func (ns *NeoStorage) CreateUser(ctx context.Context, user *models.User, labels []string) error {
-	conn, err := ns.client.GetConn()
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
 	labelsArg := make([]interface{}, len(labels))
 	for i := range labels {
 		labelsArg[i] = labels[i]
 	}
 	params := map[string]interface{}{"user_id": user.ID, "name": user.Name, "pmid": user.PMID, "labels": labelsArg,
 		"delay": user.NotificationDelay}
-	err = conn.Exec(ctx,
+	err := ns.client.ExecRetry(ctx,
 		`MERGE (u: User {uid: {user_id}}) ON CREATE SET u.name={name},u.pmid={pmid},u.lbls={labels},u.notification_delay={delay}`,
 		params)
 	return err
 }
 
 func (ns *NeoStorage) AddLabelToUser(ctx context.Context, userID int, label string) error {
-	conn, err := ns.client.GetConn()
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
 	params := map[string]interface{}{"user_id": userID, "label": label}
-	err = conn.Exec(ctx, `MATCH (u: User {uid: {user_id}}) WHERE not {label} in u.lbls SET u.lbls=u.lbls + {label}`,
-		params)
+	err := ns.client.ExecRetry(ctx,
+		`MATCH (u: User {uid: {user_id}}) WHERE not {label} in u.lbls SET u.lbls=u.lbls + {label}`, params)
 	return err
 }
 
 func (ns *NeoStorage) RemoveLabelFromUser(ctx context.Context, userID int, label string) error {
-	conn, err := ns.client.GetConn()
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
 	params := map[string]interface{}{"user_id": userID, "label": label}
-	err = conn.Exec(ctx, `MATCH (u: User {uid: {user_id}}) SET u.lbls=FILTER (lbl IN u.lbls WHERE lbl<>{label})`,
-		params)
+	err := ns.client.ExecRetry(ctx,
+		`MATCH (u: User {uid: {user_id}}) SET u.lbls=FILTER (lbl IN u.lbls WHERE lbl<>{label})`, params)
 	return err
 }
 
 func (ns *NeoStorage) GetUserLabels(ctx context.Context, userID int) ([]string, error) {
-	conn, err := ns.client.GetConn()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close(ctx)
 	params := map[string]interface{}{"user_id": userID}
-	row, err := conn.QueryOne(ctx, `MATCH (u: User {uid: {user_id}}) RETURN u.lbls`, params)
+	row, err := ns.client.QueryOne(ctx, `MATCH (u: User {uid: {user_id}}) RETURN u.lbls`, params)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			logger := logging.FromContextAndBase(ctx, gLogger).WithField("user_id", userID)
@@ -167,13 +121,8 @@ func (ns *NeoStorage) GetUserLabels(ctx context.Context, userID int) ([]string, 
 }
 
 func (ns *NeoStorage) FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.User, error) {
-	conn, err := ns.client.GetConn()
-	if err != nil {
-		return nil, err
-	}
-	defer conn.Close(ctx)
 	params := map[string]interface{}{"chat_id": chatID, "text": text}
-	rows, err := conn.Query(ctx,
+	rows, err := ns.client.Query(ctx,
 		`MATCH (u: User)-[:Member]->(c:Chat {cid:{chat_id}}) WHERE ANY(lbl IN u.lbls where {text} contains lbl) RETURN u`,
 		params)
 	if err != nil {
@@ -188,18 +137,14 @@ func (ns *NeoStorage) FindUsersByLabel(ctx context.Context, chatID int, text str
 
 func (ns *NeoStorage) PrepareIndexes() error {
 	ctx := context.Background()
-	conn, err := ns.client.GetConn()
-	if err != nil {
-		return err
-	}
-	defer conn.Close(ctx)
+	var err error
 
-	err = conn.Exec(ctx, `CREATE CONSTRAINT ON (u:User) ASSERT u.uid IS UNIQUE`, nil)
+	err = ns.client.Exec(ctx, `CREATE CONSTRAINT ON (u:User) ASSERT u.uid IS UNIQUE`, nil)
 	if err != nil {
 		return errors.Wrap(err, "User uid index")
 	}
 
-	err = conn.Exec(ctx, `CREATE CONSTRAINT ON (c:Chat) ASSERT c.cid IS UNIQUE`, nil)
+	err = ns.client.Exec(ctx, `CREATE CONSTRAINT ON (c:Chat) ASSERT c.cid IS UNIQUE`, nil)
 	if err != nil {
 		return errors.Wrap(err, "Chat cid index")
 	}

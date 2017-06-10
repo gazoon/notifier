@@ -23,13 +23,13 @@
   "mongo_notification": {
     "database": "local",
     "host": "localhost",
-    "port": 27018,
+    "port": 27017,
     "user": "",
     "password": "",
     "timeout": 1,
     "pool_size": 8,
     "retries_num": 3,
-    "retries_interval": 2500,
+    "retries_interval": 500,
     "fetch_delay": 100
   },
   "mongo_messages": {

@@ -40,6 +40,7 @@ type MongoQueue struct {
 
 func NewMongoQueue(database, user, password, host string, port, timeout, poolSize, retriesNum, retriesInterval,
 	fetchDelay int) (*MongoQueue, error) {
+
 	client, err := mongo.NewClient(database, mongoCollection, user, password, host, port, timeout, poolSize, retriesNum,
 		retriesInterval)
 	if err != nil {
@@ -49,7 +50,7 @@ func NewMongoQueue(database, user, password, host string, port, timeout, poolSiz
 }
 
 func (mq *MongoQueue) Put(ctx context.Context, record *models.Notification) error {
-	err := mq.client.Insert(ctx, true,record)
+	err := mq.client.InsertRetry(ctx, record)
 	if err == mongo.DuplicateKeyErr {
 		logger := logging.FromContextAndBase(ctx, gLogger)
 		logger.WithField("record", record).Warn("Notification duplication")
@@ -75,7 +76,7 @@ func (mq *MongoQueue) GetNext() (*models.Notification, bool) {
 
 func (mq *MongoQueue) tryGetNext() (*models.Notification, bool) {
 	result := &models.Notification{}
-	err := mq.client.FindAndModify(context.Background(), false,
+	err := mq.client.FindAndModify(context.Background(),
 		bson.M{"ready_at": bson.M{"$lt": time.Now()}},
 		"ready_at",
 		mgo.Change{Remove: true},

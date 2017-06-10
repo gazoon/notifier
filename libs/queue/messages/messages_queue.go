@@ -54,7 +54,7 @@ func NewMongoQueue(database, user, password, host string, port, timeout, poolSiz
 }
 
 func (mq *MongoQueue) Put(ctx context.Context, msg *models.Message) error {
-	err := mq.client.Upsert(ctx, true,
+	err := mq.client.UpsertRetry(ctx,
 		bson.M{"chat_id": msg.Chat.ID, "msgs.message_id": bson.M{"$ne": msg.ID}},
 		bson.M{
 			"$set":  bson.M{"chat_id": msg.Chat.ID},
@@ -84,7 +84,7 @@ func (mq *MongoQueue) tryGetNext() (*models.Message, string, bool) {
 	}
 	currentTime := time.Now()
 	processingID := newProcessingID()
-	err := mq.client.FindAndModify(context.Background(), false,
+	err := mq.client.FindAndModify(context.Background(),
 		bson.M{
 			"$or": []bson.M{
 				{"processed_at": bson.M{"$exists": false}},
@@ -125,7 +125,7 @@ func (mq *MongoQueue) FinishProcessing(ctx context.Context, processingID string)
 		return
 	}
 	logger.Info("The document hasn't been removed, reset processing info")
-	err = mq.client.Update(ctx, true,
+	err = mq.client.UpdateRetry(ctx,
 		bson.M{"processing_id": processingID},
 		bson.M{"$unset": bson.M{"processing_id": "", "processed_at": ""}},
 	)

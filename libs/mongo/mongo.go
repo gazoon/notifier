@@ -56,20 +56,27 @@ func NewClient(database, collection, user, password, host string, port, timeout,
 	}, nil
 }
 
-func (c *Client) Upsert(ctx context.Context, needRetry bool, query, update interface{}) error {
+func (c *Client) upsert(ctx context.Context, needRetry bool, query, update interface{}) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithFields(log.Fields{"query": query, "update": update}).Debug("Upserting document")
-	err := c.withRetriesLoop(ctx, needRetry, func() error {
+	return c.withRetriesLoop(ctx, needRetry, func() error {
 		_, err := c.collection.Upsert(query, update)
-		return err
+		if isDuplicationErr(err) {
+			return DuplicateKeyErr
+		}
+		return errors.Wrap(err, "upsert failed")
 	})
-	if isDuplicationErr(err) {
-		return DuplicateKeyErr
-	}
-	return errors.Wrap(err, "upsert failed")
 }
 
-func (c *Client) FindAndModify(ctx context.Context, needRetry bool, query interface{}, sort string, change mgo.Change,
+func (c *Client) Upsert(ctx context.Context, query, update interface{}) error {
+	return c.upsert(ctx, false, query, update)
+}
+
+func (c *Client) UpsertRetry(ctx context.Context, query, update interface{}) error {
+	return c.upsert(ctx, true, query, update)
+}
+
+func (c *Client) findAndModify(ctx context.Context, needRetry bool, query interface{}, sort string, change mgo.Change,
 	model interface{}) error {
 
 	logger := logging.FromContextAndBase(ctx, gLogger)
@@ -79,38 +86,66 @@ func (c *Client) FindAndModify(ctx context.Context, needRetry bool, query interf
 	}
 	q.Limit(1)
 	logger.WithFields(log.Fields{"query": query}).Debug("Find and modify document")
-	err := c.withRetriesLoop(ctx, needRetry, func() error {
+	return c.withRetriesLoop(ctx, needRetry, func() error {
 		_, err := q.Apply(change, model)
-		return err
+		if err == mgo.ErrNotFound {
+			return err
+		}
+		return errors.Wrap(err, "findAndModify failed")
 	})
-	if err == mgo.ErrNotFound {
-		return err
-	}
-	return errors.Wrap(err, "findAndModify failed")
 }
 
-func (c *Client) Update(ctx context.Context, needRetry bool, query, update interface{}) error {
+func (c *Client) FindAndModify(ctx context.Context, query interface{}, sort string, change mgo.Change,
+	model interface{}) error {
+
+	return c.findAndModify(ctx, false, query, sort, change, model)
+}
+
+func (c *Client) FindAndModifyRetry(ctx context.Context, query interface{}, sort string, change mgo.Change,
+	model interface{}) error {
+
+	return c.findAndModify(ctx, true, query, sort, change, model)
+}
+
+func (c *Client) update(ctx context.Context, needRetry bool, query, update interface{}) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithFields(log.Fields{"query": query, "update": update}).Debug("Updating document")
 	err := c.withRetriesLoop(ctx, needRetry, func() error {
-		return c.collection.Update(query, update)
+		err := c.collection.Update(query, update)
+		if err == mgo.ErrNotFound {
+			return err
+		}
+		return errors.Wrap(err, "update failed")
 	})
-	if err == mgo.ErrNotFound {
-		return err
-	}
-	return errors.Wrap(err, "update failed")
+	return err
 }
 
-func (c *Client) Insert(ctx context.Context, needRetry bool, doc interface{}) error {
+func (c *Client) Update(ctx context.Context, query, update interface{}) error {
+	return c.update(ctx, false, query, update)
+}
+
+func (c *Client) UpdateRetry(ctx context.Context, query, update interface{}) error {
+	return c.update(ctx, true, query, update)
+}
+
+func (c *Client) insert(ctx context.Context, needRetry bool, doc interface{}) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("document", doc).Debug("inserting document")
-	err := c.withRetriesLoop(ctx, needRetry, func() error {
-		return c.collection.Insert(doc)
+	return c.withRetriesLoop(ctx, needRetry, func() error {
+		err := c.collection.Insert(doc)
+		if isDuplicationErr(err) {
+			return DuplicateKeyErr
+		}
+		return errors.Wrap(err, "insert failed")
 	})
-	if isDuplicationErr(err) {
-		return DuplicateKeyErr
-	}
-	return errors.Wrap(err, "insert failed")
+}
+
+func (c *Client) Insert(ctx context.Context, doc interface{}) error {
+	return c.insert(ctx, false, doc)
+}
+
+func (c *Client) InsertRetry(ctx context.Context, doc interface{}) error {
+	return c.insert(ctx, true, doc)
 }
 
 func (c *Client) Remove(ctx context.Context, query interface{}) (int, error) {
@@ -120,13 +155,13 @@ func (c *Client) Remove(ctx context.Context, query interface{}) (int, error) {
 	err := c.withRetriesLoop(ctx, true, func() error {
 		var err error
 		info, err = c.collection.RemoveAll(query)
-		return err
+		return errors.Wrap(err, "removeAll failed")
 	})
 	removed := 0
 	if info != nil {
 		removed = info.Removed
 	}
-	return removed, errors.Wrap(err, "removeAll failed")
+	return removed, err
 }
 
 func (c *Client) CreateIndex(unique, sparse bool, keys ...string) error {
@@ -156,7 +191,7 @@ func (c *Client) withRetriesLoop(ctx context.Context, needRetry bool, work func(
 }
 
 func isRetriable(err error) bool {
-	if isDuplicationErr(err) || err == mgo.ErrNotFound {
+	if err == DuplicateKeyErr || err == mgo.ErrNotFound {
 		return false
 	}
 	return true
