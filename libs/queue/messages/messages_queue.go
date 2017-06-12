@@ -45,6 +45,7 @@ type MongoQueue struct {
 
 func NewMongoQueue(database, user, password, host string, port, timeout, poolSize, retriesNum, retriesInterval,
 	fetchDelay int) (*MongoQueue, error) {
+
 	client, err := mongo.NewClient(database, mongoCollection, user, password, host, port, timeout, poolSize, retriesNum,
 		retriesInterval)
 	if err != nil {

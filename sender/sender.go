@@ -32,7 +32,7 @@ func New(notificationQueue notifqueue.Consumer, messenger messenger.Messenger) *
 func (s *Sender) Start() {
 	conf := config.GetInstance()
 	gLogger.WithField("workers_num", conf.SenderWorkerNum).Info("Listening for notifications")
-	for i := 0; i < conf.BotWorkersNum; i++ {
+	for i := 0; i < conf.SenderWorkerNum; i++ {
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
