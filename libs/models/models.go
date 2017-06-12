@@ -41,7 +41,7 @@ type Chat struct {
 	IsPrivate bool   `bson:"is_private"`
 	Title     string `bson:"title"`
 
-	Lang      string `bson:"-"`
+	Lang string `bson:"-"`
 }
 
 func (c Chat) String() string {
@@ -52,6 +52,8 @@ type Voice struct {
 	ID       string `bson:"id"`
 	Duration int    `bson:"duration"`
 	Size     *int   `bson:"size"`
+	Encoding   string `bson:"encoding"`
+	SampleRate int    `bson:"sample_rate"`
 }
 
 func (v Voice) String() string {
@@ -61,14 +63,14 @@ func (v Voice) String() string {
 type User struct {
 	ID int `bson:"id"`
 	//id of the private chat with the user
-	PMID              int      `bson:"pmid"`
-	Username          string   `bson:"username"`
-	Name              string   `bson:"name"`
+	PMID     int    `bson:"pmid"`
+	Username string `bson:"username"`
+	Name     string `bson:"name"`
 
 	NotificationDelay int      `bson:"-"`
 	Labels            []string `bson:"-"`
 	MentioningMethod  string   `bson:"-"`
-	Lang              *string   `bson:"-"`
+	Lang              *string  `bson:"-"`
 }
 
 func (u User) String() string {

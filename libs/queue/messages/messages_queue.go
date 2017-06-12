@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	MAX_PROCESSING_TIME = 8 * time.Second
+	MAX_PROCESSING_TIME = 20 * time.Second
 )
 
 var (

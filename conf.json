@@ -17,7 +17,7 @@
   "telegram": {
     "api_token": "282857391:AAEEdYoGCEa-MzLMKXUABvSTaOLUSaSS53Y",
     "bot_name": "PMNotifierBot",
-    "http_timeout": 5,
+    "http_timeout": 10,
     "retries": 3
   },
   "mongo_notification": {
@@ -50,8 +50,8 @@
     "toggle_path": "/toggle_log"
   },
   "google_api": {
-    "access_token": "ya29.ElpmBBn5vKqH24VriLF8VsP2sVcSgPFWgUwW73NC22gt7JPsC5CZpq1y_82KJh-CSL72HoWvn176yHe1JC0zljtHvhoXzw16Y2PbYVWe7hS1mkRLggCckH_kqY8",
-    "http_timeout": 5
+    "api_key": "AIzaSyDdH330k7oCB9MWO7pnNzlQUuDwCjOsvA0",
+    "http_timeout": 15
   },
   "bot_workers_num": 10,
   "notify_yourself": true,

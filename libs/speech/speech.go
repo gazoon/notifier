@@ -4,20 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"notifier/libs/logging"
 	"regexp"
 	"time"
 
+	"encoding/base64"
 	"github.com/pkg/errors"
 )
 
 const (
-	audioEncoding              = "OGG_OPUS"
-	audioSampleRate            = 16000
-	recognitionMaxAlternatives = 30
+	recognitionMaxAlternatives = 20
 	googleRecognitionURL       = "https://speech.googleapis.com/v1/speech:recognize"
 )
 
@@ -26,50 +24,58 @@ var (
 	wordsRegexp = regexp.MustCompile(`(["='|/<>\\;:.,\s!?]+)`)
 )
 
+type Audio struct {
+	Content    []byte
+	Encoding   string
+	SampleRate int
+}
+
 type Recognizer interface {
-	TextFromAudio(ctx context.Context, fileURL, lang string, hints []string) (string, error)
-	WordsFromAudio(ctx context.Context, fileURL, lang string, hints []string) ([]string, error)
+	TextFromAudio(ctx context.Context, file *Audio, lang string, hints []string) (string, error)
+	WordsFromAudio(ctx context.Context, file *Audio, lang string, hints []string) ([]string, error)
 }
 
 type GoogleRecognizer struct {
-	authHeader string
+	apiKey     string
 	httpClient *http.Client
 }
 
-func NewGoogleRecognizer(accessToken string, timeout int) *GoogleRecognizer {
+func NewGoogleRecognizer(apiKey string, timeout int) *GoogleRecognizer {
 	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
-	return &GoogleRecognizer{httpClient: client, authHeader: fmt.Sprintf("Bearer %s", accessToken)}
+	return &GoogleRecognizer{httpClient: client, apiKey: apiKey}
 }
 
-func (gr *GoogleRecognizer) TextFromAudio(ctx context.Context, fileURL, lang string, hints []string) (string, error) {
-	alternatives, err := gr.sendAudio(ctx, fileURL, lang, hints, 1)
+func (gr *GoogleRecognizer) TextFromAudio(ctx context.Context, file *Audio, lang string, hints []string) (string, error) {
+	alternatives, err := gr.sendAudio(ctx, file, lang, hints, 1)
 	if err != nil {
 		return "", err
 	}
 	return alternatives[0], nil
 }
 
-func (gr *GoogleRecognizer) WordsFromAudio(ctx context.Context, fileURL, lang string, hints []string) ([]string, error) {
-	alternatives, err := gr.sendAudio(ctx, fileURL, lang, hints, recognitionMaxAlternatives)
+func (gr *GoogleRecognizer) WordsFromAudio(ctx context.Context, file *Audio, lang string, hints []string) (
+	[]string, error) {
+
+	alternatives, err := gr.sendAudio(ctx, file, lang, hints, recognitionMaxAlternatives)
 	if err != nil {
 		return nil, err
 	}
-	return wordsFromTexts(alternatives), nil
+	return uniqueWordsFromTexts(alternatives), nil
 }
 
-func (gr *GoogleRecognizer) sendAudio(ctx context.Context, fileURL, lang string, hints []string, alternativesNum int) (
+func (gr *GoogleRecognizer) sendAudio(ctx context.Context, file *Audio, lang string, hints []string, alternativesNum int) (
 	[]string, error) {
 
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	request := map[string]map[string]interface{}{
 		"config": {
-			"encoding":        audioEncoding,
-			"sampleRateHertz": audioSampleRate,
+			"encoding":        file.Encoding,
+			"sampleRateHertz": file.SampleRate,
 			"languageCode":    lang,
 			"maxAlternatives": alternativesNum,
 		},
 		"audio": {
-			"uri": fileURL,
+			"content": base64.StdEncoding.EncodeToString(file.Content),
 		},
 	}
 	if len(hints) != 0 {
@@ -83,10 +89,12 @@ func (gr *GoogleRecognizer) sendAudio(ctx context.Context, fileURL, lang string,
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot build recognition http request")
 	}
-	req.Header.Set("Authorization", gr.authHeader)
 	req.Header.Set("Content-Type", "application/json")
+	params := req.URL.Query()
+	params.Set("key", gr.apiKey)
+	req.URL.RawQuery = params.Encode()
 
-	logger.Info("Call recognition API, request: %s", requestStr)
+	logger.Infof("Call recognition API, request: %s", requestStr)
 	resp, err := gr.httpClient.Do(req)
 	if err != nil {
 		return nil, errors.Wrap(err, "api request failed")
@@ -97,7 +105,7 @@ func (gr *GoogleRecognizer) sendAudio(ctx context.Context, fileURL, lang string,
 	if err != nil {
 		return nil, errors.Wrap(err, "cannot read api response")
 	}
-	logger.Info("API response: %s", respContent)
+	logger.Infof("API response: %s", respContent)
 
 	data := &googleAPIResp{}
 	err = json.Unmarshal(respContent, data)
@@ -126,7 +134,7 @@ func (gr *GoogleRecognizer) processResponse(ctx context.Context, data *googleAPI
 	if len(alternatives) == 0 {
 		return nil, errors.New("result without alternatives")
 	}
-	logger.Info("recognized alternatives: %s", alternatives)
+	logger.Infof("recognized alternatives: %s", alternatives)
 	return alternatives, nil
 }
 
@@ -138,7 +146,7 @@ type googleAPIResp struct {
 	} `json:"results"`
 }
 
-func wordsFromTexts(texts []string) []string {
+func uniqueWordsFromTexts(texts []string) []string {
 	wordSet := map[string]bool{}
 	for _, text := range texts {
 		for _, word := range wordsRegexp.Split(text, -1) {
@@ -150,4 +158,8 @@ func wordsFromTexts(texts []string) []string {
 		wordList = append(wordList, word)
 	}
 	return wordList
+}
+
+func UniqueWordsFromText(text string) []string {
+	return uniqueWordsFromTexts([]string{text})
 }

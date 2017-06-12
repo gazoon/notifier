@@ -48,7 +48,7 @@ type Logging struct {
 }
 
 type GoogleAPI struct {
-	AccessToken string `json:"access_token"`
+	APIKey      string `json:"api_key"`
 	HttpTimeout int    `json:"http_timeout"`
 }
 

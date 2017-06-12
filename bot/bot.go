@@ -14,8 +14,9 @@ import (
 	"strings"
 	"sync"
 
-	log "github.com/Sirupsen/logrus"
 	"notifier/libs/speech"
+
+	log "github.com/Sirupsen/logrus"
 )
 
 const (
@@ -144,6 +145,7 @@ var (
 	noLabelsText             = "You don't have any labels yet."
 	cmdArgMissedTextTemplate = "You didn't provide a value for {%s} argument\nEnter %s {%s}"
 	cmdBadArgTextTemplate    = "You provided a bad value for {%s} argument: %s."
+	recognitionErrTemplate   = "Cannot recognize voice message request_id=%s"
 	okText                   = "OK."
 )
 
@@ -264,7 +266,7 @@ func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {
 
 func (b *Bot) syncUser(ctx context.Context, user *models.User) bool {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	labelFromName := processText(user.Name)
+	labelFromName := processWord(user.Name)
 	logger.WithField("user", user).Info("Saving user in the storage")
 	err := b.storage.GetOrCreateUser(ctx, user, defaultNotificationDelay, []string{labelFromName})
 	if err != nil {
@@ -317,6 +319,17 @@ func (b *Bot) sendErrorMsg(ctx context.Context, user *models.User) {
 	err := b.messenger.SendText(ctx, user.PMID, errorText)
 	if err != nil {
 		logger.Errorf("Cannot send error msg: %s", err)
+		return
+	}
+}
+
+func (b *Bot) sendRecognitionErrorMsg(ctx context.Context, msg *models.Message) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "msg_id": msg.ID}).Info("Sending recognition error to the chat")
+	errorText := fmt.Sprintf(recognitionErrTemplate, msg.RequestID)
+	err := b.messenger.SendReply(ctx, msg.Chat.ID, msg.ID, errorText)
+	if err != nil {
+		logger.Errorf("Cannot send recognition error msg: %s", err)
 		return
 	}
 }
@@ -411,7 +424,6 @@ func (b *Bot) commandsListHandler(ctx context.Context, msg *models.Message) {
 func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 	conf := config.GetInstance()
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	msgText := processText(msg.Text)
 
 	if !b.createChat(ctx, msg.Chat) {
 		return
@@ -425,23 +437,53 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 	if err != nil {
 		logger.Errorf("Cannot clear user notifications: %s", err)
 	}
-	if msgText == "" {
-		logger.Info("Message without text, skipping notification part")
+	if msg.Text == "" && msg.Voice == nil {
+		logger.Info("Message without text or voice, skipping notification part")
 		return
 	}
 
-	logger.WithField("message_text", msgText).Info("Searching for users mentioned in the message text")
-	users, err := b.storage.FindUsersByLabel(ctx, msg.Chat.ID, msgText)
+	logger.WithField("chat_id", msg.Chat.ID).Info("Retrieving chat users")
+	users, err := b.storage.GetChatUsers(ctx, msg.Chat.ID)
 	if err != nil {
 		logger.Errorf("Cannot get users from storage to notify: %s", err)
 		return
 	}
-	logger.WithField("users", users).Info("Users mentioned in the message")
+	logger.WithField("users", users).Info("Users in the chat")
+
+	users = b.filterNotChatUsers(ctx, users, msg.Chat)
 	if !conf.NotifyYourself {
 		// for debug purposes
+		logger.WithField("yourself", msg.From).Info("Excluding yourself from the list of users to notify")
 		users = excludeUserFromList(users, msg.From)
 	}
-	users = b.filterNotChatUsers(ctx, users, msg.Chat)
+	var wordsInMessage []string
+	if msg.Text != "" {
+		logger.WithField("text", msg.Text).Info("Text mentioning")
+		wordsInMessage = speech.UniqueWordsFromText(msg.Text)
+	} else {
+		logger.WithField("voice", msg.Voice).Info("Voice mentioning")
+		fileContent, err := b.messenger.DownloadFile(ctx, msg.Voice.ID)
+		if err != nil {
+			logger.Errorf("Messenger doesn't return file content for voice %s: %s", msg.Voice.ID, err)
+			return
+		}
+		audioToRecognize := &speech.Audio{
+			Content: fileContent, Encoding: msg.Voice.Encoding, SampleRate: msg.Voice.SampleRate}
+		voiceLang := defaultVoiceLang
+		usersLabels := enumLabels(users)
+		logger.WithFields(log.Fields{"lang": voiceLang, "hints": usersLabels}).Info("Fetching words from voice message")
+		wordsInMessage, err = b.recognizer.WordsFromAudio(ctx, audioToRecognize, defaultVoiceLang, usersLabels)
+		if err != nil {
+			logger.Warnf("Audio recognizer failed: %s", err)
+			b.sendRecognitionErrorMsg(ctx, msg)
+			return
+		}
+	}
+	wordsInMessage = processWords(wordsInMessage)
+	logger.WithFields(log.Fields{"users": users, "words": wordsInMessage}).Info("Search mentioned users to notify")
+	users = getMentionedUsers(users, wordsInMessage)
+
+	logger.WithField("users", users).Info("Users to notify")
 	b.notifyUsers(ctx, users, msg)
 }
 
@@ -486,7 +528,7 @@ func (b *Bot) addUserLabelHandler(ctx context.Context, msg *models.Message) {
 	user := msg.From
 	_, label := msg.ToCommand()
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	label = processText(label)
+	label = processWord(label)
 
 	if !b.syncUser(ctx, user) {
 		b.sendErrorMsg(ctx, user)
@@ -513,7 +555,7 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
 	user := msg.From
 	_, label := msg.ToCommand()
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	label = processText(label)
+	label = processWord(label)
 
 	if !b.syncUser(ctx, user) {
 		b.sendErrorMsg(ctx, user)
@@ -590,6 +632,44 @@ func excludeUserFromList(users []*models.User, userToExclude *models.User) []*mo
 	return result
 }
 
-func processText(text string) string {
-	return strings.ToLower(strings.TrimSpace(text))
+func processWord(word string) string {
+	return strings.ToLower(word)
+}
+
+func processWords(words []string) []string {
+	result := make([]string, len(words))
+	for i, text := range words {
+		result[i] = processWord(text)
+	}
+	return result
+}
+
+func getMentionedUsers(users []*models.User, words []string) []*models.User {
+	var mentioned []*models.User
+	for _, user := range users {
+		for _, label := range user.Labels {
+			if isLabelInWords(words, label) {
+				mentioned = append(mentioned, user)
+				break
+			}
+		}
+	}
+	return mentioned
+}
+
+func isLabelInWords(words []string, label string) bool {
+	for _, word := range words {
+		if strings.HasPrefix(word, label) {
+			return true
+		}
+	}
+	return false
+}
+
+func enumLabels(users []*models.User) []string {
+	var labels []string
+	for _, user := range users {
+		labels = append(labels, user.Labels...)
+	}
+	return labels
 }

@@ -25,7 +25,7 @@ type Storage interface {
 	AddLabelToUser(ctx context.Context, userID int, label string) error
 	SetNotificationDelay(ctx context.Context, userID, delay int) error
 	RemoveLabelFromUser(ctx context.Context, userID int, label string) error
-	FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.User, error)
+	GetChatUsers(ctx context.Context, chatID int) ([]*models.User, error)
 }
 type NeoStorage struct {
 	client *neo.Client
@@ -104,10 +104,10 @@ func (ns *NeoStorage) RemoveLabelFromUser(ctx context.Context, userID int, label
 	return err
 }
 
-func (ns *NeoStorage) FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.User, error) {
-	params := map[string]interface{}{"chat_id": chatID, "text": text}
+func (ns *NeoStorage) GetChatUsers(ctx context.Context, chatID int) ([]*models.User, error) {
+	params := map[string]interface{}{"chat_id": chatID}
 	rows, err := ns.client.Query(ctx,
-		`MATCH (u: User)-[:Member]->(c:Chat {cid:{chat_id}}) WHERE ANY(lbl IN u.lbls where {text} contains lbl) RETURN u`,
+		`MATCH (u: User)-[:Member]->(c:Chat {cid:{chat_id}}) RETURN u`,
 		params)
 	if err != nil {
 		return nil, err

@@ -12,10 +12,16 @@ import (
 
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/pkg/errors"
+	"strings"
 )
 
 var (
 	gLogger = logging.WithPackage("telegram_polling")
+)
+
+const (
+	audioEncoding   = "OGG_OPUS"
+	audioSampleRate = 16000
 )
 
 func transformUser(u *tgbotapi.User) *models.User {
@@ -69,12 +75,18 @@ func (tp *TelegramPoller) updateMessageToModel(updateMessage *tgbotapi.Message) 
 		if size != 0 {
 			voiceSize = &size
 		}
-		voice = &models.Voice{ID: updateMessage.Voice.FileID, Duration: updateMessage.Voice.Duration, Size: voiceSize}
+		voice = &models.Voice{
+			ID:         updateMessage.Voice.FileID,
+			Duration:   updateMessage.Voice.Duration,
+			Size:       voiceSize,
+			Encoding:   audioEncoding,
+			SampleRate: audioSampleRate,
+		}
 	}
 	chatID := int(updateMessage.Chat.ID)
 	message := &models.Message{
 		ID:    updateMessage.MessageID,
-		Text:  updateMessage.Text,
+		Text:  strings.TrimSpace(updateMessage.Text),
 		Voice: voice,
 		Chat: &models.Chat{
 			ID:        chatID,
@@ -139,7 +151,7 @@ func (tp *TelegramPoller) Start() error {
 				time.Sleep(time.Second * time.Duration(retryDelay))
 				continue
 			}
-			gLogger.Info("Telegram API returns updates: %v", updates)
+			gLogger.Infof("Telegram API returns updates: %s", updates)
 			for i := range updates {
 				update := &updates[i]
 				if update.UpdateID >= updatesConf.Offset {

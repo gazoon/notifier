@@ -13,8 +13,8 @@ import (
 
 	"github.com/pkg/errors"
 	"notifier/libs/logging"
-	"notifier/libs/speech"
 	"reflect"
+	"notifier/libs/speech"
 )
 
 var (
@@ -55,7 +55,7 @@ func CreateNeoStorage() (*storage.NeoStorage, error) {
 func CreateGoogleRecognizer() *speech.GoogleRecognizer {
 	gLogger.Info("Initializing google recognizer api")
 	conf := config.GetInstance()
-	recognizer := speech.NewGoogleRecognizer(conf.GoogleAPI.AccessToken, conf.GoogleAPI.HttpTimeout)
+	recognizer := speech.NewGoogleRecognizer(conf.GoogleAPI.APIKey, conf.GoogleAPI.HttpTimeout)
 	return recognizer
 }
 

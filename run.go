@@ -10,7 +10,6 @@ import (
 	"notifier/sender"
 
 	"github.com/pkg/errors"
-	"runtime"
 )
 
 var (
@@ -19,7 +18,7 @@ var (
 
 func main() {
 	var confPath string
-	runtime.GOMAXPROCS(1)
+	//runtime.GOMAXPROCS(1)
 	config.FromCmdArgs(&confPath)
 	flag.Parse()
 
