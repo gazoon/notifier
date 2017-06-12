@@ -30,7 +30,7 @@
     "pool_size": 8,
     "retries_num": 3,
     "retries_interval": 500,
-    "fetch_delay": 100
+    "fetch_delay": 500
   },
   "mongo_messages": {
     "database": "local",
@@ -42,7 +42,7 @@
     "pool_size": 10,
     "retries_num": 3,
     "retries_interval": 500,
-    "fetch_delay": 50
+    "fetch_delay": 500
   },
   "logging": {
     "default_level": "info",
