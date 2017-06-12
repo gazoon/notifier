@@ -12,6 +12,7 @@ type Message struct {
 	RequestID      string    `bson:"request_id"`
 	Chat           *Chat     `bson:"chat"`
 	Text           string    `bson:"text"`
+	Voice          *Voice    `bson:"voice"`
 	From           *User     `bson:"from"`
 	NewChatMember  *User     `bson:"new_chat_member"`
 	LeftChatMember *User     `bson:"left_chat_member"`
@@ -39,19 +40,35 @@ type Chat struct {
 	ID        int    `bson:"id"`
 	IsPrivate bool   `bson:"is_private"`
 	Title     string `bson:"title"`
+
+	Lang      string `bson:"-"`
 }
 
 func (c Chat) String() string {
 	return ObjToString(&c)
 }
 
+type Voice struct {
+	ID       string `bson:"id"`
+	Duration int    `bson:"duration"`
+	Size     *int   `bson:"size"`
+}
+
+func (v Voice) String() string {
+	return ObjToString(&v)
+}
+
 type User struct {
 	ID int `bson:"id"`
 	//id of the private chat with the user
-	PMID              int    `bson:"pmid"`
-	Username          string `bson:"username"`
-	Name              string `bson:"name"`
-	NotificationDelay int    `bson:"-"`
+	PMID              int      `bson:"pmid"`
+	Username          string   `bson:"username"`
+	Name              string   `bson:"name"`
+
+	NotificationDelay int      `bson:"-"`
+	Labels            []string `bson:"-"`
+	MentioningMethod  string   `bson:"-"`
+	Lang              *string   `bson:"-"`
 }
 
 func (u User) String() string {

@@ -85,6 +85,13 @@ func (ts *telegram) IsUserInChat(ctx context.Context, userID, chatID int) (bool,
 	return userStatus != userLeftStatus && userStatus != userKickedStatus, nil
 }
 
+func (ts *telegram) GetFileURL(ctx context.Context, fileID string) (string, error) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithField("file_id", fileID).Info("Retrieve file url from telegram")
+	fileURL, err := ts.bot.GetFileDirectURL(fileID)
+	return fileURL, errors.Wrap(err, "file url retrieving failed")
+}
+
 func isUserNotInChatErr(err error) bool {
 	return http.StatusText(http.StatusBadRequest) == err.Error()
 }

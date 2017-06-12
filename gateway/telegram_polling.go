@@ -62,10 +62,20 @@ func (tp *TelegramPoller) updateMessageToModel(updateMessage *tgbotapi.Message) 
 	if updateMessage.From == nil {
 		return nil, errors.New("message without from")
 	}
+	var voice *models.Voice
+	if updateMessage.Voice != nil {
+		var voiceSize *int
+		size := updateMessage.Voice.FileSize
+		if size != 0 {
+			voiceSize = &size
+		}
+		voice = &models.Voice{ID: updateMessage.Voice.FileID, Duration: updateMessage.Voice.Duration, Size: voiceSize}
+	}
 	chatID := int(updateMessage.Chat.ID)
 	message := &models.Message{
-		ID:   updateMessage.MessageID,
-		Text: updateMessage.Text,
+		ID:    updateMessage.MessageID,
+		Text:  updateMessage.Text,
+		Voice: voice,
 		Chat: &models.Chat{
 			ID:        chatID,
 			IsPrivate: updateMessage.Chat.IsPrivate(),

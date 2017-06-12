@@ -84,11 +84,11 @@ func (c *Client) transaction(ctx context.Context, needRetry bool, work func(*Con
 }
 
 func (c *Client) Transaction(ctx context.Context, work func(*Connection) error) error {
-	return c.retriesLoop(ctx, false, true, work)
+	return c.transaction(ctx, false, work)
 }
 
 func (c *Client) TransactionRetry(ctx context.Context, work func(*Connection) error) error {
-	return c.retriesLoop(ctx, true, true, work)
+	return c.transaction(ctx, true, work)
 }
 
 func (c *Client) exec(ctx context.Context, needRetry bool, query string, params map[string]interface{}) error {
@@ -98,20 +98,18 @@ func (c *Client) exec(ctx context.Context, needRetry bool, query string, params 
 }
 
 func (c *Client) Exec(ctx context.Context, query string, params map[string]interface{}) error {
-	return c.retriesLoop(ctx, false, false, func(conn *Connection) error {
-		return conn.Exec(ctx, query, params)
-	})
+	return c.exec(ctx, false, query, params)
 }
 
 func (c *Client) ExecRetry(ctx context.Context, query string, params map[string]interface{}) error {
-	return c.retriesLoop(ctx, true, false, func(conn *Connection) error {
-		return conn.Exec(ctx, query, params)
-	})
+	return c.exec(ctx, true, query, params)
 }
 
-func (c *Client) Query(ctx context.Context, query string, params map[string]interface{}) ([][]interface{}, error) {
+func (c *Client) query(ctx context.Context, needRetry bool, query string, params map[string]interface{}) (
+	[][]interface{}, error) {
+
 	var result [][]interface{}
-	err := c.retriesLoop(ctx, true, false, func(conn *Connection) error {
+	err := c.retriesLoop(ctx, needRetry, false, func(conn *Connection) error {
 		var err error
 		result, err = conn.Query(ctx, query, params)
 		return err
@@ -119,14 +117,32 @@ func (c *Client) Query(ctx context.Context, query string, params map[string]inte
 	return result, err
 }
 
-func (c *Client) QueryOne(ctx context.Context, query string, params map[string]interface{}) ([]interface{}, error) {
+func (c *Client) Query(ctx context.Context, query string, params map[string]interface{}) ([][]interface{}, error) {
+	return c.query(ctx, false, query, params)
+}
+
+func (c *Client) QueryRetry(ctx context.Context, query string, params map[string]interface{}) ([][]interface{}, error) {
+	return c.query(ctx, true, query, params)
+}
+
+func (c *Client) queryOne(ctx context.Context, needRetry bool, query string, params map[string]interface{}) (
+	[]interface{}, error) {
+
 	var result []interface{}
-	err := c.retriesLoop(ctx, true, false, func(conn *Connection) error {
+	err := c.retriesLoop(ctx, needRetry, false, func(conn *Connection) error {
 		var err error
 		result, err = conn.QueryOne(ctx, query, params)
 		return err
 	})
 	return result, err
+}
+
+func (c *Client) QueryOne(ctx context.Context, query string, params map[string]interface{}) ([]interface{}, error) {
+	return c.queryOne(ctx, false, query, params)
+}
+
+func (c *Client) QueryOneRetry(ctx context.Context, query string, params map[string]interface{}) ([]interface{}, error) {
+	return c.queryOne(ctx, true, query, params)
 }
 
 func (c *Connection) Query(ctx context.Context, query string, params map[string]interface{}) ([][]interface{}, error) {

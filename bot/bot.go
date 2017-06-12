@@ -15,14 +15,120 @@ import (
 	"sync"
 
 	log "github.com/Sirupsen/logrus"
+	"notifier/libs/speech"
 )
 
 const (
+	addLabelCmd         = "addLabel"
+	removeLabelCmd      = "removeLabel"
+	showLabelsCmd       = "showLabels"
+	setDelayCmd         = "notifDelay"
+	mentioningMethodCmd = "mentioningMethod"
+
 	defaultNotificationDelay = 10
-	addLabelCmd              = "addLabel"
-	removeLabelCmd           = "removeLabel"
-	showLabelsCmd            = "showLabels"
-	setDelayCmd              = "notifDelay"
+
+	defaultVoiceLang      = "ru-RU"
+	allMentioningMethod   = "all"
+	noneMentioningMethod  = "none"
+	voiceMentioningMethod = "voice"
+	textMentioningMethod  = "text"
+)
+
+var (
+	mentioningMethodsList = [...]string{
+		allMentioningMethod, noneMentioningMethod, voiceMentioningMethod, textMentioningMethod,
+	}
+	supportedLangs = [...]string{
+		"af-ZA",
+		"id-ID",
+		"ms-MY",
+		"ca-ES",
+		"cs-CZ",
+		"da-DK",
+		"de-DE",
+		"en-AU",
+		"en-CA",
+		"en-GB",
+		"en-IN",
+		"en-IE",
+		"en-NZ",
+		"en-PH",
+		"en-ZA",
+		"en-US",
+		"es-AR",
+		"es-BO",
+		"es-CL",
+		"es-CO",
+		"es-CR",
+		"es-EC",
+		"es-SV",
+		"es-ES",
+		"es-US",
+		"es-GT",
+		"es-HN",
+		"es-MX",
+		"es-NI",
+		"es-PA",
+		"es-PY",
+		"es-PE",
+		"es-PR",
+		"es-DO",
+		"es-UY",
+		"es-VE",
+		"eu-ES",
+		"fil-PH",
+		"fr-CA",
+		"fr-FR",
+		"gl-ES",
+		"hr-HR",
+		"zu-ZA",
+		"is-IS",
+		"it-IT",
+		"lt-LT",
+		"hu-HU",
+		"nl-NL",
+		"nb-NO",
+		"pl-PL",
+		"pt-BR",
+		"pt-PT",
+		"ro-RO",
+		"sk-SK",
+		"sl-SI",
+		"fi-FI",
+		"sv-SE",
+		"vi-VN",
+		"tr-TR",
+		"el-GR",
+		"bg-BG",
+		"ru-RU",
+		"sr-RS",
+		"uk-UA",
+		"he-IL",
+		"ar-IL",
+		"ar-JO",
+		"ar-AE",
+		"ar-BH",
+		"ar-DZ",
+		"ar-SA",
+		"ar-IQ",
+		"ar-KW",
+		"ar-MA",
+		"ar-TN",
+		"ar-OM",
+		"ar-PS",
+		"ar-QA",
+		"ar-LB",
+		"ar-EG",
+		"fa-IR",
+		"hi-IN",
+		"th-TH",
+		"ko-KR",
+		"cmn-Hant-TW",
+		"yue-Hant-HK",
+		"ja-JP",
+		"cmn-Hans-HK",
+		"cmn-Hans-CN",
+	}
 )
 
 var (
@@ -59,18 +165,20 @@ type Bot struct {
 	notificationQueue notifqueue.Producer
 	messenger         messenger.Messenger
 	storage           storage.Storage
+	recognizer        speech.Recognizer
 	commandsRegister  map[string]*Handler
 	wg                sync.WaitGroup
 }
 
 func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer, messenger messenger.Messenger,
-	storage storage.Storage) *Bot {
+	storage storage.Storage, recognizer speech.Recognizer) *Bot {
 
 	b := &Bot{
 		messagesQueue:     messagesQueue,
 		notificationQueue: notificationQueue,
 		messenger:         messenger,
 		storage:           storage,
+		recognizer:        recognizer,
 	}
 	b.commandsRegister = b.createCommandRegister()
 	return b
@@ -154,12 +262,11 @@ func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {
 	handler.Func(ctx, msg)
 }
 
-func (b *Bot) createUser(ctx context.Context, user *models.User) bool {
+func (b *Bot) syncUser(ctx context.Context, user *models.User) bool {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	labelFromName := processText(user.Name)
-	user.NotificationDelay = defaultNotificationDelay
 	logger.WithField("user", user).Info("Saving user in the storage")
-	err := b.storage.CreateUser(ctx, user, []string{labelFromName})
+	err := b.storage.GetOrCreateUser(ctx, user, defaultNotificationDelay, []string{labelFromName})
 	if err != nil {
 		logger.Errorf("Cannot save user in the storage: %s", err)
 		return false
@@ -247,11 +354,11 @@ func (b *Bot) sendBadArgMsg(ctx context.Context, user *models.User, cmd, argName
 	}
 }
 
-func (b *Bot) sendUserLabels(ctx context.Context, user *models.User, labels []string) {
+func (b *Bot) sendUserLabels(ctx context.Context, user *models.User) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	var labelsText string
-	if len(labels) != 0 {
-		labelsText = strings.Join(labels, "\n")
+	if len(user.Labels) != 0 {
+		labelsText = strings.Join(user.Labels, "\n")
 	} else {
 		labelsText = noLabelsText
 	}
@@ -292,7 +399,7 @@ func (b *Bot) commandsListHandler(ctx context.Context, msg *models.Message) {
 	user := msg.From
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
-	b.createUser(ctx, user)
+	b.syncUser(ctx, user)
 
 	logger.WithField("user_id", user.ID).Info("Sending the list of commands")
 	err := b.messenger.SendText(ctx, user.PMID, commandsText)
@@ -381,7 +488,7 @@ func (b *Bot) addUserLabelHandler(ctx context.Context, msg *models.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	label = processText(label)
 
-	if !b.createUser(ctx, user) {
+	if !b.syncUser(ctx, user) {
 		b.sendErrorMsg(ctx, user)
 		return
 	}
@@ -408,7 +515,7 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	label = processText(label)
 
-	if !b.createUser(ctx, user) {
+	if !b.syncUser(ctx, user) {
 		b.sendErrorMsg(ctx, user)
 		return
 	}
@@ -431,29 +538,20 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
 
 func (b *Bot) showUserLabelsHandler(ctx context.Context, msg *models.Message) {
 	user := msg.From
-	logger := logging.FromContextAndBase(ctx, gLogger)
 
-	if !b.createUser(ctx, user) {
+	if !b.syncUser(ctx, user) {
 		b.sendErrorMsg(ctx, user)
 		return
 	}
 
-	logger.WithField("user_id", user.ID).Info("Get user labels from the storage")
-	labels, err := b.storage.GetUserLabels(ctx, user.ID)
-	if err != nil {
-		logger.Errorf("Cannot fetch a list of user labels from storage: %s", err)
-		b.sendErrorMsg(ctx, user)
-		return
-	}
-
-	b.sendUserLabels(ctx, user, labels)
+	b.sendUserLabels(ctx, user)
 }
 
 func (b *Bot) setDelayHandler(ctx context.Context, msg *models.Message) {
 	user := msg.From
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
-	if !b.createUser(ctx, user) {
+	if !b.syncUser(ctx, user) {
 		b.sendErrorMsg(ctx, user)
 		return
 	}

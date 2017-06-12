@@ -10,6 +10,7 @@ import (
 	"notifier/sender"
 
 	"github.com/pkg/errors"
+	"runtime"
 )
 
 var (
@@ -18,6 +19,7 @@ var (
 
 func main() {
 	var confPath string
+	runtime.GOMAXPROCS(1)
 	config.FromCmdArgs(&confPath)
 	flag.Parse()
 
@@ -41,7 +43,8 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	botService := bot.New(incomingQueue, outgoingQueue, telegramMessenger, dataStorage)
+	googleRecognizer := core.CreateGoogleRecognizer()
+	botService := bot.New(incomingQueue, outgoingQueue, telegramMessenger, dataStorage, googleRecognizer)
 	pollerService := gateway.NewTelegramPoller(incomingQueue, conf.Telegram.BotName)
 	senderService := sender.New(outgoingQueue, telegramMessenger)
 	gLogger.Info("Starting bot service")

@@ -47,6 +47,11 @@ type Logging struct {
 	TogglePath   string `json:"toggle_path"`
 }
 
+type GoogleAPI struct {
+	AccessToken string `json:"access_token"`
+	HttpTimeout int    `json:"http_timeout"`
+}
+
 func FromJSONFile(path string, config interface{}) error {
 	if path == "" {
 		return errors.New("empty config path")

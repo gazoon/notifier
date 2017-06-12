@@ -13,6 +13,7 @@ import (
 
 	"github.com/pkg/errors"
 	"notifier/libs/logging"
+	"notifier/libs/speech"
 	"reflect"
 )
 
@@ -49,6 +50,13 @@ func CreateNeoStorage() (*storage.NeoStorage, error) {
 	dataStorage, err := storage.NewNeoStorage(conf.Neo.Host, conf.Neo.Port, conf.Neo.User, conf.Neo.Password,
 		conf.Neo.Timeout, conf.Neo.PoolSize, conf.Neo.RetriesNum, conf.Neo.RetriesInterval)
 	return dataStorage, errors.Wrap(err, "neo storage")
+}
+
+func CreateGoogleRecognizer() *speech.GoogleRecognizer {
+	gLogger.Info("Initializing google recognizer api")
+	conf := config.GetInstance()
+	recognizer := speech.NewGoogleRecognizer(conf.GoogleAPI.AccessToken, conf.GoogleAPI.HttpTimeout)
+	return recognizer
 }
 
 func CreateTelegramMessenger() (messenger.Messenger, error) {

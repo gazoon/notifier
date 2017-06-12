@@ -6,8 +6,6 @@ import (
 	"notifier/libs/models"
 	"notifier/libs/neo"
 
-	"database/sql"
-
 	"reflect"
 
 	"github.com/johnnadratowski/golang-neo4j-bolt-driver/structures/graph"
@@ -23,11 +21,10 @@ type Storage interface {
 	DeleteChat(ctx context.Context, chatID int) error
 	RemoveUserFromChat(ctx context.Context, chatID, userID int) error
 	AddUserToChat(ctx context.Context, chatID, userID int) error
-	CreateUser(ctx context.Context, user *models.User, labels []string) error
+	GetOrCreateUser(ctx context.Context, user *models.User, notificationDelay int, labels []string) error
 	AddLabelToUser(ctx context.Context, userID int, label string) error
 	SetNotificationDelay(ctx context.Context, userID, delay int) error
 	RemoveLabelFromUser(ctx context.Context, userID int, label string) error
-	GetUserLabels(ctx context.Context, userID int) ([]string, error)
 	FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.User, error)
 }
 type NeoStorage struct {
@@ -75,17 +72,22 @@ func (ns *NeoStorage) AddUserToChat(ctx context.Context, chatID, userID int) err
 	return err
 }
 
-func (ns *NeoStorage) CreateUser(ctx context.Context, user *models.User, labels []string) error {
+func (ns *NeoStorage) GetOrCreateUser(ctx context.Context, user *models.User, notificationDelay int, labels []string) error {
+
 	labelsArg := make([]interface{}, len(labels))
 	for i := range labels {
 		labelsArg[i] = labels[i]
 	}
 	params := map[string]interface{}{"user_id": user.ID, "name": user.Name, "pmid": user.PMID, "labels": labelsArg,
-		"delay": user.NotificationDelay}
-	err := ns.client.ExecRetry(ctx,
-		`MERGE (u: User {uid: {user_id}}) ON CREATE SET u.name={name},u.pmid={pmid},u.lbls={labels},u.notification_delay={delay}`,
+		"delay": notificationDelay}
+	row, err := ns.client.QueryOneRetry(ctx,
+		`MERGE (u: User {uid: {user_id}}) ON CREATE SET u.name={name},u.pmid={pmid},u.lbls={labels},u.notification_delay={delay} return u`,
 		params)
-	return err
+	if err != nil {
+		return err
+	}
+	err = rowToUser(row, user)
+	return errors.Wrap(err, "user deserialization failed")
 }
 
 func (ns *NeoStorage) AddLabelToUser(ctx context.Context, userID int, label string) error {
@@ -100,24 +102,6 @@ func (ns *NeoStorage) RemoveLabelFromUser(ctx context.Context, userID int, label
 	err := ns.client.ExecRetry(ctx,
 		`MATCH (u: User {uid: {user_id}}) SET u.lbls=FILTER (lbl IN u.lbls WHERE lbl<>{label})`, params)
 	return err
-}
-
-func (ns *NeoStorage) GetUserLabels(ctx context.Context, userID int) ([]string, error) {
-	params := map[string]interface{}{"user_id": userID}
-	row, err := ns.client.QueryOne(ctx, `MATCH (u: User {uid: {user_id}}) RETURN u.lbls`, params)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			logger := logging.FromContextAndBase(ctx, gLogger).WithField("user_id", userID)
-			logger.Warn("User not found, return empty list of labels")
-			return nil, nil
-		}
-		return nil, err
-	}
-	labels, err := rowToLabels(row)
-	if err != nil {
-		return nil, errors.Wrap(err, "cannot convert row to labels")
-	}
-	return labels, nil
 }
 
 func (ns *NeoStorage) FindUsersByLabel(ctx context.Context, chatID int, text string) ([]*models.User, error) {
@@ -152,51 +136,52 @@ func (ns *NeoStorage) PrepareIndexes() error {
 	return nil
 }
 
-func rowToLabels(row []interface{}) ([]string, error) {
-	if len(row) != 1 {
-		return nil, errors.Errorf("expected row length is 1, row = %v", row)
-	}
-	elements, ok := row[0].([]interface{})
-	if !ok {
-		return nil, errors.Errorf("row elem must have []interface{} type, got %v", reflect.TypeOf(row[0]))
-	}
-	var labels []string
-	for _, elem := range elements {
-		label, ok := elem.(string)
-		if !ok {
-			return nil, errors.Errorf("label must be a string, got %v", reflect.TypeOf(elem))
-		}
-		labels = append(labels, label)
-	}
-	return labels, nil
-}
-
 func rowsToUsers(rows [][]interface{}) ([]*models.User, error) {
 	var users []*models.User
 	for _, row := range rows {
-		if len(row) != 1 {
-			return nil, errors.Errorf("expected row length is 1, row = %v", row)
+		user := new(models.User)
+		err := rowToUser(row, user)
+		if err != nil {
+			return nil, err
 		}
-		node, ok := row[0].(graph.Node)
-		if !ok {
-			return nil, errors.Errorf("expected graph Node row element, got %v", row[0])
-		}
-		data := node.Properties
-		userID, isUserIdOk := data["uid"].(int64)
-		PMID, isPmIdOk := data["pmid"].(int64)
-		name, isNameOk := data["name"].(string)
-		notificationDelay, isDelayOk := data["notification_delay"].(int64)
-		if !isUserIdOk || !isPmIdOk || !isNameOk || !isDelayOk {
-			return nil, errors.Errorf("expected uid-int64,pmid-int64,name-string,delay-int64 properties, got %v %v %v %v",
-				reflect.TypeOf(data["uid"]), reflect.TypeOf(data["pmid"]),
-				reflect.TypeOf(data["name"]), reflect.TypeOf(data["notification_delay"]))
-		}
-		users = append(users, &models.User{
-			ID:                int(userID),
-			PMID:              int(PMID),
-			Name:              name,
-			NotificationDelay: int(notificationDelay),
-		})
+		users = append(users, user)
 	}
 	return users, nil
+}
+
+func rowToUser(row []interface{}, user *models.User) error {
+	if len(row) != 1 {
+		return errors.Errorf("expected row length is 1, row = %v", row)
+	}
+	node, ok := row[0].(graph.Node)
+	if !ok {
+		return errors.Errorf("expected graph Node row element, got %v", row[0])
+	}
+	data := node.Properties
+	userID, isUserIdOk := data["uid"].(int64)
+	PMID, isPmIdOk := data["pmid"].(int64)
+	name, isNameOk := data["name"].(string)
+	notificationDelay, isDelayOk := data["notification_delay"].(int64)
+	lbls, isLabelsOk := data["lbls"].([]interface{})
+	if !isUserIdOk || !isPmIdOk || !isNameOk || !isDelayOk || !isLabelsOk {
+		return errors.Errorf("expected uid-int64,pmid-int64,name-string,delay-int64,labels-[]interface{} properties, got %v %v %v %v %v",
+			reflect.TypeOf(data["uid"]), reflect.TypeOf(data["pmid"]),
+			reflect.TypeOf(data["name"]), reflect.TypeOf(data["notification_delay"]), reflect.TypeOf(data["lbls"]))
+	}
+
+	labels := make([]string, len(lbls))
+	for i, item := range lbls {
+		label, ok := item.(string)
+		if !ok {
+			return errors.Errorf("label must be a string, got %v", reflect.TypeOf(item))
+		}
+		labels[i] = label
+	}
+
+	user.ID = int(userID)
+	user.PMID = int(PMID)
+	user.Name = name
+	user.NotificationDelay = int(notificationDelay)
+	user.Labels = labels
+	return nil
 }

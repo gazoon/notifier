@@ -24,6 +24,7 @@ type ServiceConfig struct {
 	Telegram          *config.TelegramSettings `json:"telegram"`
 	TelegramPolling   *config.TelegramPolling  `json:"telegram_polling"`
 	Logging           *config.Logging          `json:"logging"`
+	GoogleAPI         *config.GoogleAPI        `json:"google_api"`
 }
 
 func Initialization(configPath string) {

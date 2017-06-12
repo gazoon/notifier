@@ -49,6 +49,10 @@
     "toggle_port": 8989,
     "toggle_path": "/toggle_log"
   },
+  "google_api": {
+    "access_token": "ya29.ElpmBBn5vKqH24VriLF8VsP2sVcSgPFWgUwW73NC22gt7JPsC5CZpq1y_82KJh-CSL72HoWvn176yHe1JC0zljtHvhoXzw16Y2PbYVWe7hS1mkRLggCckH_kqY8",
+    "http_timeout": 5
+  },
   "bot_workers_num": 10,
   "notify_yourself": true,
   "sender_workers_num": 10,
