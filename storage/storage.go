@@ -21,12 +21,15 @@ type Storage interface {
 	DeleteChat(ctx context.Context, chatID int) error
 	RemoveUserFromChat(ctx context.Context, chatID, userID int) error
 	AddUserToChat(ctx context.Context, chatID, userID int) error
-	GetOrCreateUser(ctx context.Context, user *models.User, notificationDelay int, labels []string) error
+	GetOrCreateUser(ctx context.Context, user *models.User, notificationDelay int, mentioningMethod string,
+		labels []string) error
 	AddLabelToUser(ctx context.Context, userID int, label string) error
 	SetNotificationDelay(ctx context.Context, userID, delay int) error
+	SetMentioningMethod(ctx context.Context, userID int, method string) error
 	RemoveLabelFromUser(ctx context.Context, userID int, label string) error
 	GetChatUsers(ctx context.Context, chatID int) ([]*models.User, error)
 }
+
 type NeoStorage struct {
 	client *neo.Client
 }
@@ -44,6 +47,11 @@ func NewNeoStorage(host string, port int, user, password string, timeout, poolSi
 func (ns *NeoStorage) SetNotificationDelay(ctx context.Context, userID, delay int) error {
 	params := map[string]interface{}{"user_id": userID, "delay": delay}
 	return ns.client.ExecRetry(ctx, `MATCH (u: User {uid: {user_id}}) SET u.notification_delay={delay}`, params)
+}
+
+func (ns *NeoStorage) SetMentioningMethod(ctx context.Context, userID int, method string) error {
+	params := map[string]interface{}{"user_id": userID, "mentioning": method}
+	return ns.client.ExecRetry(ctx, `MATCH (u: User {uid: {user_id}}) SET u.mentioning={mentioning}`, params)
 }
 
 func (ns *NeoStorage) CreateChat(ctx context.Context, chat *models.Chat) error {
@@ -72,16 +80,18 @@ func (ns *NeoStorage) AddUserToChat(ctx context.Context, chatID, userID int) err
 	return err
 }
 
-func (ns *NeoStorage) GetOrCreateUser(ctx context.Context, user *models.User, notificationDelay int, labels []string) error {
+func (ns *NeoStorage) GetOrCreateUser(ctx context.Context, user *models.User, notificationDelay int,
+	mentioningMethod string, labels []string) error {
 
 	labelsArg := make([]interface{}, len(labels))
 	for i := range labels {
 		labelsArg[i] = labels[i]
 	}
 	params := map[string]interface{}{"user_id": user.ID, "name": user.Name, "pmid": user.PMID, "labels": labelsArg,
-		"delay": notificationDelay}
+		"delay": notificationDelay, "mentioning": mentioningMethod}
 	row, err := ns.client.QueryOneRetry(ctx,
-		`MERGE (u: User {uid: {user_id}}) ON CREATE SET u.name={name},u.pmid={pmid},u.lbls={labels},u.notification_delay={delay} return u`,
+		`MERGE (u: User {uid: {user_id}}) ON CREATE SET
+		u.name={name},u.pmid={pmid},u.lbls={labels},u.notification_delay={delay},u.mentioning={mentioning} return u`,
 		params)
 	if err != nil {
 		return err
@@ -163,10 +173,14 @@ func rowToUser(row []interface{}, user *models.User) error {
 	name, isNameOk := data["name"].(string)
 	notificationDelay, isDelayOk := data["notification_delay"].(int64)
 	lbls, isLabelsOk := data["lbls"].([]interface{})
-	if !isUserIdOk || !isPmIdOk || !isNameOk || !isDelayOk || !isLabelsOk {
-		return errors.Errorf("expected uid-int64,pmid-int64,name-string,delay-int64,labels-[]interface{} properties, got %v %v %v %v %v",
+	mentioningMethod, isMentioningOk := data["mentioning"].(string)
+	if !isUserIdOk || !isPmIdOk || !isNameOk || !isDelayOk || !isLabelsOk || !isMentioningOk {
+		return errors.Errorf(
+			"expected uid-int64,pmid-int64,name-string,delay-int64,labels-[]interface{},mentioning-string"+
+				" properties, got %v %v %v %v %v %v",
 			reflect.TypeOf(data["uid"]), reflect.TypeOf(data["pmid"]),
-			reflect.TypeOf(data["name"]), reflect.TypeOf(data["notification_delay"]), reflect.TypeOf(data["lbls"]))
+			reflect.TypeOf(data["name"]), reflect.TypeOf(data["notification_delay"]), reflect.TypeOf(data["lbls"]),
+			reflect.TypeOf(data["mentioning"]))
 	}
 
 	labels := make([]string, len(lbls))
@@ -182,6 +196,7 @@ func rowToUser(row []interface{}, user *models.User) error {
 	user.PMID = int(PMID)
 	user.Name = name
 	user.NotificationDelay = int(notificationDelay)
+	user.MentioningMethod = mentioningMethod
 	user.Labels = labels
 	return nil
 }

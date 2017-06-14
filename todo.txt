@@ -1,5 +1,6 @@
 19. language per chat
 20. language per user
-21. ability to choose mention type (text, voice, all, none)
-22. implement effective in-memory storage,queues
 23. add neo timeouts
+24. notification messages
+25. http client?
+

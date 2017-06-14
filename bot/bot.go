@@ -17,6 +17,7 @@ import (
 	"notifier/libs/speech"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -29,15 +30,15 @@ const (
 	defaultNotificationDelay = 10
 
 	defaultVoiceLang      = "ru-RU"
-	allMentioningMethod   = "all"
-	noneMentioningMethod  = "none"
-	voiceMentioningMethod = "voice"
-	textMentioningMethod  = "text"
+	AllMentioningMethod   = "all"
+	NoneMentioningMethod  = "none"
+	VoiceMentioningMethod = "voice"
+	TextMentioningMethod  = "text"
 )
 
 var (
 	mentioningMethodsList = [...]string{
-		allMentioningMethod, noneMentioningMethod, voiceMentioningMethod, textMentioningMethod,
+		AllMentioningMethod, NoneMentioningMethod, VoiceMentioningMethod, TextMentioningMethod,
 	}
 	supportedLangs = [...]string{
 		"af-ZA",
@@ -137,8 +138,9 @@ var (
 
 	commandsText = fmt.Sprintf("Hi! I can do following for you:\n%s - Add new label for further notifications.\n"+
 		"%s - Delete label with provided name.\n%s - Show all your labels.\n"+
-		"%s - Change the time, in seconds, after which I will send notification, default - 10 sec, 0 means notify immediately.",
-		addLabelCmd, removeLabelCmd, showLabelsCmd, setDelayCmd)
+		"%s - Change the time, in seconds, after which I will send notification, default - 10 sec, 0 means notify immediately.\n"+
+		"%s - Change the method, by which people can mention you, e.g: %s, %s, %s or %s.",
+		addLabelCmd, removeLabelCmd, showLabelsCmd, setDelayCmd, mentioningMethodCmd, TextMentioningMethod, VoiceMentioningMethod, AllMentioningMethod, NoneMentioningMethod)
 
 	notificationTextTemplate = "%s, you've been mentioned in the %s chat:"
 	errorText                = "An internal bot error occurred."
@@ -188,10 +190,11 @@ func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer
 
 func (b *Bot) createCommandRegister() map[string]*Handler {
 	register := map[string]*Handler{
-		addLabelCmd:    {b.addUserLabelHandler, "addUserLabel"},
-		removeLabelCmd: {b.removeUserLabelHandler, "removeUserLabel"},
-		showLabelsCmd:  {b.showUserLabelsHandler, "showUserLabels"},
-		setDelayCmd:    {b.setDelayHandler, "setNotificationDelay"},
+		addLabelCmd:         {b.addUserLabelHandler, "addUserLabel"},
+		removeLabelCmd:      {b.removeUserLabelHandler, "removeUserLabel"},
+		showLabelsCmd:       {b.showUserLabelsHandler, "showUserLabels"},
+		setDelayCmd:         {b.setDelayHandler, "setNotificationDelay"},
+		mentioningMethodCmd: {b.setMentioningMethodHandler, "setMentioningMethod"},
 	}
 	for cmdName, handler := range register {
 		register[strings.ToLower(cmdName)] = handler
@@ -268,7 +271,7 @@ func (b *Bot) syncUser(ctx context.Context, user *models.User) bool {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	labelFromName := processWord(user.Name)
 	logger.WithField("user", user).Info("Saving user in the storage")
-	err := b.storage.GetOrCreateUser(ctx, user, defaultNotificationDelay, []string{labelFromName})
+	err := b.storage.GetOrCreateUser(ctx, user, defaultNotificationDelay, AllMentioningMethod, []string{labelFromName})
 	if err != nil {
 		logger.Errorf("Cannot save user in the storage: %s", err)
 		return false
@@ -421,6 +424,16 @@ func (b *Bot) commandsListHandler(ctx context.Context, msg *models.Message) {
 	}
 }
 
+func filterByMentioningMethod(users []*models.User, method string) []*models.User {
+	var filtered []*models.User
+	for _, user := range users {
+		if user.MentioningMethod == method || user.MentioningMethod == AllMentioningMethod {
+			filtered = append(filtered, user)
+		}
+	}
+	return filtered
+}
+
 func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 	conf := config.GetInstance()
 	logger := logging.FromContextAndBase(ctx, gLogger)
@@ -458,10 +471,13 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 	}
 	var wordsInMessage []string
 	if msg.Text != "" {
-		logger.WithField("text", msg.Text).Info("Text mentioning")
+		logger.WithField("text", msg.Text).Info("Text mentioning, leave users who can be mentioned by text")
+		users = filterByMentioningMethod(users, TextMentioningMethod)
 		wordsInMessage = speech.UniqueWordsFromText(msg.Text)
+
 	} else {
-		logger.WithField("voice", msg.Voice).Info("Voice mentioning")
+		logger.WithField("voice", msg.Voice).Info("Voice mentioning, leave users who can be mentioned by voice")
+		users = filterByMentioningMethod(users, VoiceMentioningMethod)
 		fileContent, err := b.messenger.DownloadFile(ctx, msg.Voice.ID)
 		if err != nil {
 			logger.Errorf("Messenger doesn't return file content for voice %s: %s", msg.Voice.ID, err)
@@ -614,6 +630,49 @@ func (b *Bot) setDelayHandler(ctx context.Context, msg *models.Message) {
 	err = b.storage.SetNotificationDelay(ctx, user.ID, delay)
 	if err != nil {
 		logger.Errorf("Cannot save user notification delay in the storage: %s", err)
+		b.sendErrorMsg(ctx, user)
+		return
+	}
+
+	b.sendOKMsg(ctx, user)
+}
+
+func isValidMentioningMethod(value string) bool {
+	for _, method := range mentioningMethodsList {
+		if method == value {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *models.Message) {
+	user := msg.From
+	logger := logging.FromContextAndBase(ctx, gLogger)
+
+	if !b.syncUser(ctx, user) {
+		b.sendErrorMsg(ctx, user)
+		return
+	}
+
+	_, mentioningMethod := msg.ToCommand()
+	if mentioningMethod == "" {
+		b.sendMissArgMsg(ctx, user, mentioningMethodCmd, "mentioning_method")
+		return
+	}
+	mentioningMethod = strings.ToLower(mentioningMethod)
+	ok := isValidMentioningMethod(mentioningMethod)
+	if !ok {
+		errInfo := errors.Errorf("valid values: %s", mentioningMethodsList)
+		b.sendBadArgMsg(ctx, user, mentioningMethodCmd, "mentioning_method", mentioningMethod, errInfo)
+		return
+	}
+
+	logger.WithFields(log.Fields{"user_id": user.ID, "mentioning_method": mentioningMethod}).
+		Info("Save custom mentioning method")
+	err := b.storage.SetMentioningMethod(ctx, user.ID, mentioningMethod)
+	if err != nil {
+		logger.Errorf("Cannot save user mentioning setting in the storage: %s", err)
 		b.sendErrorMsg(ctx, user)
 		return
 	}

@@ -15,6 +15,7 @@ import (
 	"notifier/libs/logging"
 	"reflect"
 	"notifier/libs/speech"
+	"notifier/libs/neo"
 )
 
 var (
@@ -50,6 +51,14 @@ func CreateNeoStorage() (*storage.NeoStorage, error) {
 	dataStorage, err := storage.NewNeoStorage(conf.Neo.Host, conf.Neo.Port, conf.Neo.User, conf.Neo.Password,
 		conf.Neo.Timeout, conf.Neo.PoolSize, conf.Neo.RetriesNum, conf.Neo.RetriesInterval)
 	return dataStorage, errors.Wrap(err, "neo storage")
+}
+
+func CreateNeoStorageDBClient() (*neo.Client, error) {
+	gLogger.Info("Initializing neo storage db client")
+	conf := config.GetInstance()
+	dataStorage, err := neo.NewClient(conf.Neo.Host, conf.Neo.Port, conf.Neo.User, conf.Neo.Password,
+		conf.Neo.Timeout, conf.Neo.PoolSize, conf.Neo.RetriesNum, conf.Neo.RetriesInterval)
+	return dataStorage, errors.Wrap(err, "neo db")
 }
 
 func CreateGoogleRecognizer() *speech.GoogleRecognizer {
