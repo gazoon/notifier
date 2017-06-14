@@ -10,9 +10,10 @@ import (
 
 	"notifier/libs/queue/messages"
 
+	"strings"
+
 	"github.com/go-telegram-bot-api/telegram-bot-api"
 	"github.com/pkg/errors"
-	"strings"
 )
 
 var (
@@ -83,6 +84,10 @@ func (tp *TelegramPoller) updateMessageToModel(updateMessage *tgbotapi.Message) 
 			SampleRate: audioSampleRate,
 		}
 	}
+	var newChatMember *tgbotapi.User
+	if updateMessage.NewChatMembers != nil && len(*updateMessage.NewChatMembers) != 0 {
+		newChatMember = &(*updateMessage.NewChatMembers)[0]
+	}
 	chatID := int(updateMessage.Chat.ID)
 	message := &models.Message{
 		ID:    updateMessage.MessageID,
@@ -94,11 +99,11 @@ func (tp *TelegramPoller) updateMessageToModel(updateMessage *tgbotapi.Message) 
 			Title:     updateMessage.Chat.Title,
 		},
 		From:       transformUser(updateMessage.From),
-		IsBotAdded: tp.userIsBot(updateMessage.NewChatMember),
+		IsBotAdded: tp.userIsBot(newChatMember),
 		IsBotLeft:  tp.userIsBot(updateMessage.LeftChatMember),
 	}
 	if !message.IsBotAdded {
-		message.NewChatMember = transformUser(updateMessage.NewChatMember)
+		message.NewChatMember = transformUser(newChatMember)
 	}
 	if !message.IsBotLeft {
 		message.LeftChatMember = transformUser(updateMessage.LeftChatMember)
