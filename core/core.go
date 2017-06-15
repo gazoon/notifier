@@ -13,9 +13,10 @@ import (
 
 	"github.com/pkg/errors"
 	"notifier/libs/logging"
-	"reflect"
-	"notifier/libs/speech"
 	"notifier/libs/neo"
+	"notifier/libs/notifications_registry"
+	"notifier/libs/speech"
+	"reflect"
 )
 
 var (
@@ -43,6 +44,14 @@ func CreateMongoNotifications() (*notifqueue.MongoQueue, error) {
 	outgoingMongoQueue, err := notifqueue.NewMongoQueue(conf.Database, conf.User, conf.Password, conf.Host, conf.Port,
 		conf.Timeout, conf.PoolSize, conf.RetriesNum, conf.RetriesInterval, conf.FetchDelay)
 	return outgoingMongoQueue, errors.Wrap(err, "mongo notification queue")
+}
+
+func CreateMongoRegistry() (*notifregistry.MongoRegistry, error) {
+	conf := config.GetInstance().MongoRegistry
+	gLogger.Info("Initializing mongo notifications registry")
+	outgoingMongoQueue, err := notifregistry.NewMongoRegistry(conf.Database, conf.User, conf.Password, conf.Host, conf.Port,
+		conf.Timeout, conf.PoolSize, conf.RetriesNum, conf.RetriesInterval)
+	return outgoingMongoQueue, errors.Wrap(err, "mongo notifications registry")
 }
 
 func CreateNeoStorage() (*storage.NeoStorage, error) {

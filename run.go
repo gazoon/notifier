@@ -42,9 +42,13 @@ func main() {
 		panic(err)
 	}
 	googleRecognizer := core.CreateGoogleRecognizer()
-	botService := bot.New(incomingQueue, outgoingQueue, telegramMessenger, dataStorage, googleRecognizer)
+	mongoRegistry, err := core.CreateMongoRegistry()
+	if err != nil {
+		panic(err)
+	}
+	botService := bot.New(incomingQueue, outgoingQueue, mongoRegistry, telegramMessenger, dataStorage, googleRecognizer)
 	pollerService := gateway.NewTelegramPoller(incomingQueue, conf.Telegram.BotName)
-	senderService := sender.New(outgoingQueue, telegramMessenger)
+	senderService := sender.New(outgoingQueue, mongoRegistry, telegramMessenger)
 	gLogger.Info("Starting bot service")
 	botService.Start()
 	defer botService.Stop()

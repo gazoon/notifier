@@ -20,11 +20,11 @@ import (
 
 const (
 	MAX_PROCESSING_TIME = 20 * time.Second
+	mongoCollection = "messages"
 )
 
 var (
 	gLogger         = logging.WithPackage("incoming_queue")
-	mongoCollection = "messages"
 	DuplicateMsgErr = errors.New("message is already in the queue")
 )
 

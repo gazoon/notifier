@@ -44,6 +44,17 @@
     "retries_interval": 500,
     "fetch_delay": 500
   },
+  "mongo_registry": {
+    "database": "local",
+    "host": "localhost",
+    "port": 27017,
+    "user": "",
+    "password": "",
+    "timeout": 1,
+    "pool_size": 10,
+    "retries_num": 3,
+    "retries_interval": 500
+  },
   "logging": {
     "default_level": "info",
     "toggle_port": 8989,

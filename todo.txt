@@ -3,4 +3,5 @@
 23. add neo timeouts
 24. notification messages
 25. http client?
-
+26. move default user/chat values from bot to the models
+27. add flag delete sent notification or not

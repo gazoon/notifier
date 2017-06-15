@@ -119,7 +119,7 @@ func (tp *TelegramPoller) processUpdate(update *tgbotapi.Update) {
 	ctx := prepareContext(requestID)
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	if update.Message == nil {
-		logger.Debugf("Skip update without the Message field: %+v", update)
+		logger.Infof("Skip update without the Message field: %+v", update)
 		return
 	}
 	msg, err := tp.updateMessageToModel(update.Message)
@@ -149,7 +149,7 @@ func (tp *TelegramPoller) Start() error {
 	updatesConf := tgbotapi.UpdateConfig{Timeout: conf.TelegramPolling.PollTimeout}
 	go func() {
 		for {
-			gLogger.Debug("Requesting new updates from API")
+			gLogger.Info("Requesting new updates from API")
 			updates, err := bot.GetUpdates(updatesConf)
 			if err != nil {
 				gLogger.Warnf("Failed to get updates: %s retrying in %d seconds...", err, retryDelay)

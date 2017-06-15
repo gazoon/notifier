@@ -1,8 +1,7 @@
 package models
 
 import (
-	"encoding/json"
-	"fmt"
+	"notifier/libs/logging"
 	"strings"
 	"time"
 )
@@ -22,7 +21,7 @@ type Message struct {
 }
 
 func (m Message) String() string {
-	return ObjToString(&m)
+	return logging.ObjToString(&m)
 }
 
 func (m *Message) ToCommand() (string, string) {
@@ -45,19 +44,19 @@ type Chat struct {
 }
 
 func (c Chat) String() string {
-	return ObjToString(&c)
+	return logging.ObjToString(&c)
 }
 
 type Voice struct {
-	ID       string `bson:"id"`
-	Duration int    `bson:"duration"`
-	Size     *int   `bson:"size"`
+	ID         string `bson:"id"`
+	Duration   int    `bson:"duration"`
+	Size       *int   `bson:"size"`
 	Encoding   string `bson:"encoding"`
 	SampleRate int    `bson:"sample_rate"`
 }
 
 func (v Voice) String() string {
-	return ObjToString(&v)
+	return logging.ObjToString(&v)
 }
 
 type User struct {
@@ -74,7 +73,7 @@ type User struct {
 }
 
 func (u User) String() string {
-	return ObjToString(&u)
+	return logging.ObjToString(&u)
 }
 
 type Notification struct {
@@ -98,13 +97,5 @@ func NewNotification(user *User, msgID, chatID int, text, requestID string) *Not
 }
 
 func (n Notification) String() string {
-	return ObjToString(&n)
-}
-
-func ObjToString(obj interface{}) string {
-	b, err := json.Marshal(obj)
-	if err != nil {
-		return fmt.Sprintf("cannot represent as json: %s", err)
-	}
-	return string(b)
+	return logging.ObjToString(&n)
 }

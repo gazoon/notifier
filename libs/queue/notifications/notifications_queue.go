@@ -18,9 +18,12 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-var (
-	gLogger         = logging.WithPackage("notification_queue")
+const (
 	mongoCollection = "notifications"
+)
+
+var (
+	gLogger = logging.WithPackage("notification_queue")
 )
 
 type Producer interface {

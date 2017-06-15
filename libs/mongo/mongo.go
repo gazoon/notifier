@@ -56,9 +56,25 @@ func NewClient(database, collection, user, password, host string, port, timeout,
 	}, nil
 }
 
+func (c *Client) Find(ctx context.Context, query interface{}, sort string, limit int, model interface{}) error {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	q := c.collection.Find(query)
+	if sort != "" {
+		q = q.Sort(sort)
+	}
+	if limit > 0 {
+		q = q.Limit(limit)
+	}
+	logger.WithFields(log.Fields{"query": query, "sort": sort, "limit": limit}).Info("Find all documents")
+	return c.withRetriesLoop(ctx, true, func() error {
+		err := q.All(model)
+		return errors.Wrap(err, "find failed")
+	})
+}
+
 func (c *Client) upsert(ctx context.Context, needRetry bool, query, update interface{}) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithFields(log.Fields{"query": query, "update": update}).Debug("Upserting document")
+	logger.WithFields(log.Fields{"query": query, "update": update}).Info("Upserting document")
 	return c.withRetriesLoop(ctx, needRetry, func() error {
 		_, err := c.collection.Upsert(query, update)
 		if isDuplicationErr(err) {
@@ -85,7 +101,7 @@ func (c *Client) findAndModify(ctx context.Context, needRetry bool, query interf
 		q.Sort(sort)
 	}
 	q.Limit(1)
-	logger.WithFields(log.Fields{"query": query}).Debug("Find and modify document")
+	logger.WithFields(log.Fields{"query": query, "sort": sort}).Debug("Find and modify document")
 	return c.withRetriesLoop(ctx, needRetry, func() error {
 		_, err := q.Apply(change, model)
 		if err == mgo.ErrNotFound {
@@ -109,7 +125,7 @@ func (c *Client) FindAndModifyRetry(ctx context.Context, query interface{}, sort
 
 func (c *Client) update(ctx context.Context, needRetry bool, query, update interface{}) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithFields(log.Fields{"query": query, "update": update}).Debug("Updating document")
+	logger.WithFields(log.Fields{"query": query, "update": update}).Info("Updating document")
 	err := c.withRetriesLoop(ctx, needRetry, func() error {
 		err := c.collection.Update(query, update)
 		if err == mgo.ErrNotFound {
@@ -130,7 +146,7 @@ func (c *Client) UpdateRetry(ctx context.Context, query, update interface{}) err
 
 func (c *Client) insert(ctx context.Context, needRetry bool, doc interface{}) error {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("document", doc).Debug("inserting document")
+	logger.WithField("document", doc).Info("inserting document")
 	return c.withRetriesLoop(ctx, needRetry, func() error {
 		err := c.collection.Insert(doc)
 		if isDuplicationErr(err) {
@@ -150,7 +166,7 @@ func (c *Client) InsertRetry(ctx context.Context, doc interface{}) error {
 
 func (c *Client) Remove(ctx context.Context, query interface{}) (int, error) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("query", query).Debug("removing documents")
+	logger.WithField("query", query).Info("removing documents")
 	var info *mgo.ChangeInfo
 	err := c.withRetriesLoop(ctx, true, func() error {
 		var err error

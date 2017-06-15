@@ -9,6 +9,7 @@ import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/satori/go.uuid"
+	"encoding/json"
 )
 
 var (
@@ -129,4 +130,12 @@ func StartLevelToggle(togglePath string, port int) {
 	go func() {
 		http.ListenAndServe(fmt.Sprintf(":%d", port), mux)
 	}()
+}
+
+func ObjToString(obj interface{}) string {
+	b, err := json.Marshal(obj)
+	if err != nil {
+		return fmt.Sprintf("cannot represent as json: %s", err)
+	}
+	return string(b)
 }

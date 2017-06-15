@@ -22,11 +22,11 @@ var (
 )
 
 type Messenger interface {
-	SendText(ctx context.Context, chatID int, text string) error
-	SendReply(ctx context.Context, chatID, msgID int, text string) error
-	SendForward(ctx context.Context, toChatID, fromChatID, msgID int) error
-	SendForwardWithText(ctx context.Context, toChatID, fromChatID, msgID int, text string) error
+	SendText(ctx context.Context, chatID int, text string) (int, error)
+	SendReply(ctx context.Context, chatID, msgID int, text string) (int, error)
+	SendForward(ctx context.Context, toChatID, fromChatID, msgID int) (int, error)
 	IsUserInChat(ctx context.Context, userID, chatID int) (bool, error)
+	DeleteMessage(ctx context.Context, messageID, chatID int) error
 	DownloadFile(ctx context.Context, fileID string) ([]byte, error)
 }
 
@@ -43,52 +43,44 @@ func NewTelegram(apiToken string, httpTimeout int) (Messenger, error) {
 	return &telegram{bot}, nil
 }
 
-func (ts *telegram) SendText(ctx context.Context, chatID int, text string) error {
+func (ts *telegram) SendText(ctx context.Context, chatID int, text string) (int, error) {
 	logger := logging.FromContextAndBase(ctx, gLogger).WithFields(log.Fields{"chat_id": chatID, "text": text})
 	msg := tgbotapi.NewMessage(int64(chatID), text)
-	logger.Debug("Calling send text API method")
-	_, err := ts.bot.Send(msg)
+	logger.Info("Calling send text API method")
+	sentMessage, err := ts.bot.Send(msg)
 	if err != nil {
-		return errors.Wrap(err, "cannot send text to telegram API")
+		return 0, errors.Wrap(err, "cannot send text to telegram API")
 	}
-	return nil
+	return sentMessage.MessageID, nil
 }
 
-func (ts *telegram) SendReply(ctx context.Context, chatID, msgID int, text string) error {
+func (ts *telegram) SendReply(ctx context.Context, chatID, msgID int, text string) (int, error) {
 	logger := logging.FromContextAndBase(ctx, gLogger).WithFields(log.Fields{"chat_id": chatID, "msg_id": msgID, "text": text})
 	msg := tgbotapi.NewMessage(int64(chatID), text)
 	msg.ReplyToMessageID = msgID
-	logger.Debug("Calling send reply API method")
-	_, err := ts.bot.Send(msg)
+	logger.Info("Calling send reply API method")
+	sentMessage, err := ts.bot.Send(msg)
 	if err != nil {
-		return errors.Wrap(err, "cannot send reply to telegram API")
+		return 0, errors.Wrap(err, "cannot send reply to telegram API")
 	}
-	return nil
+	return sentMessage.MessageID, nil
 }
 
-func (ts *telegram) SendForward(ctx context.Context, toChatID, fromChatID, msgID int) error {
+func (ts *telegram) SendForward(ctx context.Context, toChatID, fromChatID, msgID int) (int, error) {
 	logger := logging.FromContextAndBase(ctx, gLogger).WithField("msg_id", msgID)
 	forward := tgbotapi.NewForward(int64(toChatID), int64(fromChatID), msgID)
-	logger.Debug("Calling forward message API method")
-	_, err := ts.bot.Send(forward)
+	logger.Info("Calling forward message API method")
+	sentMessage, err := ts.bot.Send(forward)
 	if err != nil {
-		return errors.Wrap(err, "cannot forward msg to telegram API")
+		return 0, errors.Wrap(err, "cannot forward msg to telegram API")
 	}
-	return nil
-}
-
-func (ts *telegram) SendForwardWithText(ctx context.Context, toChatID, fromChatID, msgID int, text string) error {
-	err := ts.SendText(ctx, toChatID, text)
-	if err != nil {
-		return err
-	}
-	return ts.SendForward(ctx, toChatID, fromChatID, msgID)
+	return sentMessage.MessageID, nil
 }
 
 func (ts *telegram) IsUserInChat(ctx context.Context, userID, chatID int) (bool, error) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	args := tgbotapi.ChatConfigWithUser{ChatID: int64(chatID), UserID: userID}
-	logger.Debugf("Calling get chat member info API method, args: %+v", args)
+	logger.Infof("Calling get chat member info API method, args: %+v", args)
 	memberInfo, err := ts.bot.GetChatMember(args)
 	if err != nil {
 		if isUserNotInChatErr(err) {
@@ -118,6 +110,18 @@ func (ts *telegram) DownloadFile(ctx context.Context, fileID string) ([]byte, er
 
 	content, err := ioutil.ReadAll(resp.Body)
 	return content, errors.Wrap(err, "file content reading failed")
+}
+
+func (ts *telegram) DeleteMessage(ctx context.Context, messageID, chatID int) error {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	args := tgbotapi.DeleteMessageConfig{ChatID: int64(chatID), MessageID: messageID}
+	logger.Infof("Calling delte message api method, args: %+v", args)
+	resp, err := ts.bot.DeleteMessage(args)
+	if err != nil {
+		return errors.Wrap(err, "delete api failed")
+	}
+	logger.Infof("Delete api response: %+v", resp)
+	return nil
 }
 
 func isUserNotInChatErr(err error) bool {

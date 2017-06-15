@@ -18,6 +18,7 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
+	"notifier/libs/notifications_registry"
 )
 
 const (
@@ -167,6 +168,7 @@ type Handler struct {
 type Bot struct {
 	messagesQueue     msgsqueue.Consumer
 	notificationQueue notifqueue.Producer
+	registry          notifregistry.ReadDeleter
 	messenger         messenger.Messenger
 	storage           storage.Storage
 	recognizer        speech.Recognizer
@@ -174,12 +176,13 @@ type Bot struct {
 	wg                sync.WaitGroup
 }
 
-func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer, messenger messenger.Messenger,
-	storage storage.Storage, recognizer speech.Recognizer) *Bot {
+func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer, registry notifregistry.ReadDeleter,
+	messenger messenger.Messenger, storage storage.Storage, recognizer speech.Recognizer) *Bot {
 
 	b := &Bot{
 		messagesQueue:     messagesQueue,
 		notificationQueue: notificationQueue,
+		registry:          registry,
 		messenger:         messenger,
 		storage:           storage,
 		recognizer:        recognizer,
@@ -319,7 +322,7 @@ func (b *Bot) notifyUsers(ctx context.Context, users []*models.User, msg *models
 func (b *Bot) sendErrorMsg(ctx context.Context, user *models.User) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("user", user).Info("Sending error msg to the user")
-	err := b.messenger.SendText(ctx, user.PMID, errorText)
+	_, err := b.messenger.SendText(ctx, user.PMID, errorText)
 	if err != nil {
 		logger.Errorf("Cannot send error msg: %s", err)
 		return
@@ -330,7 +333,7 @@ func (b *Bot) sendRecognitionErrorMsg(ctx context.Context, msg *models.Message) 
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "msg_id": msg.ID}).Info("Sending recognition error to the chat")
 	errorText := fmt.Sprintf(recognitionErrTemplate, msg.RequestID)
-	err := b.messenger.SendReply(ctx, msg.Chat.ID, msg.ID, errorText)
+	_, err := b.messenger.SendReply(ctx, msg.Chat.ID, msg.ID, errorText)
 	if err != nil {
 		logger.Errorf("Cannot send recognition error msg: %s", err)
 		return
@@ -340,7 +343,7 @@ func (b *Bot) sendRecognitionErrorMsg(ctx context.Context, msg *models.Message) 
 func (b *Bot) sendOKMsg(ctx context.Context, user *models.User) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("user", user).Info("Sending ok message")
-	err := b.messenger.SendText(ctx, user.PMID, okText)
+	_, err := b.messenger.SendText(ctx, user.PMID, okText)
 	if err != nil {
 		logger.Errorf("Cannot send ok msg to the user %s", err)
 		return
@@ -351,7 +354,7 @@ func (b *Bot) sendMissArgMsg(ctx context.Context, user *models.User, cmd, argNam
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("user", user).Infof("Call cmd %s without arg %s, sending arg missed message", cmd, argName)
 	text := fmt.Sprintf(cmdArgMissedTextTemplate, argName, cmd, argName)
-	err := b.messenger.SendText(ctx, user.PMID, text)
+	_, err := b.messenger.SendText(ctx, user.PMID, text)
 	if err != nil {
 		logger.Errorf("Cannot send arg missed msg: %s", err)
 		return
@@ -363,7 +366,7 @@ func (b *Bot) sendBadArgMsg(ctx context.Context, user *models.User, cmd, argName
 	logger.WithField("user", user).Infof("Call cmd %s arg %s with incorrect value=%s: %s, sending bad arg message",
 		cmd, argName, argValue, argErr)
 	text := fmt.Sprintf(cmdBadArgTextTemplate, argName, argErr)
-	err := b.messenger.SendText(ctx, user.PMID, text)
+	_, err := b.messenger.SendText(ctx, user.PMID, text)
 	if err != nil {
 		logger.Errorf("Cannot send bad arg msg: %s", err)
 		return
@@ -379,7 +382,7 @@ func (b *Bot) sendUserLabels(ctx context.Context, user *models.User) {
 		labelsText = noLabelsText
 	}
 	logger.WithField("labels_text", labelsText).Info("Sending labels to the user")
-	err := b.messenger.SendText(ctx, user.PMID, labelsText)
+	_, err := b.messenger.SendText(ctx, user.PMID, labelsText)
 	if err != nil {
 		logger.Errorf("Cannot send list of user labels: %s", err)
 		return
@@ -418,7 +421,7 @@ func (b *Bot) commandsListHandler(ctx context.Context, msg *models.Message) {
 	b.syncUser(ctx, user)
 
 	logger.WithField("user_id", user.ID).Info("Sending the list of commands")
-	err := b.messenger.SendText(ctx, user.PMID, commandsText)
+	_, err := b.messenger.SendText(ctx, user.PMID, commandsText)
 	if err != nil {
 		logger.Errorf("cannot send commands to the user: %s", err)
 	}
@@ -434,6 +437,36 @@ func filterByMentioningMethod(users []*models.User, method string) []*models.Use
 	return filtered
 }
 
+func (b *Bot) removeUserNotifications(ctx context.Context, user *models.User, chatID int) {
+	logger := logging.FromContextAndBase(ctx, gLogger).WithFields(log.Fields{"user": user, "chat_id": chatID})
+	logger.Info("Discarding not actual user notifications from the queue")
+	err := b.notificationQueue.Discard(ctx, user, chatID)
+	if err != nil {
+		logger.Errorf("Cannot clear user notifications in the queue: %s", err)
+	}
+
+	logger.Info("Get already sent notifications to delete")
+	sentNotifications, err := b.registry.Get(ctx, user.ID, chatID)
+	if err != nil {
+		logger.Errorf("Cannot retrieve sent notifications from the registry: %s", err)
+		return
+	}
+	for _, sentMessage := range sentNotifications {
+		logger = logger.WithField("sent_notification", sentMessage)
+		logger.Info("Delete notification message from private chat with the user")
+		err = b.messenger.DeleteMessage(ctx, sentMessage.MessageID, user.PMID)
+		if err != nil {
+			logger.Errorf("Cannot delete notification message from the messenger: %s", err)
+		}
+		logger.Info("Delete sent message from registry")
+		err = b.registry.Delete(ctx, sentMessage)
+		if err != nil {
+			logger.Errorf("Cannot delete sent message from the registry: %s", err)
+		}
+	}
+
+}
+
 func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 	conf := config.GetInstance()
 	logger := logging.FromContextAndBase(ctx, gLogger)
@@ -444,12 +477,8 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 
 	b.addUserToChat(ctx, msg.Chat.ID, msg.From.ID)
 
-	logger.WithFields(log.Fields{"user": msg.From, "chat_id": msg.Chat.ID}).
-		Info("Discarding not actual user notifications")
-	err := b.notificationQueue.Discard(ctx, msg.From, msg.Chat.ID)
-	if err != nil {
-		logger.Errorf("Cannot clear user notifications: %s", err)
-	}
+	b.removeUserNotifications(ctx, msg.From, msg.Chat.ID)
+
 	if msg.Text == "" && msg.Voice == nil {
 		logger.Info("Message without text or voice, skipping notification part")
 		return
@@ -637,15 +666,6 @@ func (b *Bot) setDelayHandler(ctx context.Context, msg *models.Message) {
 	b.sendOKMsg(ctx, user)
 }
 
-func isValidMentioningMethod(value string) bool {
-	for _, method := range mentioningMethodsList {
-		if method == value {
-			return true
-		}
-	}
-	return false
-}
-
 func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *models.Message) {
 	user := msg.From
 	logger := logging.FromContextAndBase(ctx, gLogger)
@@ -731,4 +751,13 @@ func enumLabels(users []*models.User) []string {
 		labels = append(labels, user.Labels...)
 	}
 	return labels
+}
+
+func isValidMentioningMethod(value string) bool {
+	for _, method := range mentioningMethodsList {
+		if method == value {
+			return true
+		}
+	}
+	return false
 }

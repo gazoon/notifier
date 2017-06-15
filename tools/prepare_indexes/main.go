@@ -21,12 +21,16 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	mongoRegistry, err := core.CreateMongoRegistry()
+	if err != nil {
+		panic(err)
+	}
 	neoStorage, err := core.CreateNeoStorage()
 	if err != nil {
 		panic(err)
 	}
 
-	err = core.PrepareIndexes(incomingMongoQueue, outgoingMongoQueue, neoStorage)
+	err = core.PrepareIndexes(incomingMongoQueue, mongoRegistry, outgoingMongoQueue, neoStorage)
 	if err != nil {
 		panic(err)
 	}
