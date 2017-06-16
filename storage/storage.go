@@ -22,8 +22,7 @@ type Storage interface {
 	DeleteChat(ctx context.Context, chatID int) error
 	RemoveUserFromChat(ctx context.Context, chatID, userID int) error
 	AddUserToChat(ctx context.Context, chatID, userID int) error
-	GetOrCreateUser(ctx context.Context, user *models.User, pmid, notificationDelay int, mentioningMethod string,
-		labels []string) error
+	GetOrCreateUser(ctx context.Context, user *models.User, pmid int) error
 	GetUser(ctx context.Context, user *models.User) (bool, error)
 	AddLabelToUser(ctx context.Context, userID int, label string) error
 	SetNotificationDelay(ctx context.Context, userID, delay int) error
@@ -82,15 +81,14 @@ func (ns *NeoStorage) AddUserToChat(ctx context.Context, chatID, userID int) err
 	return err
 }
 
-func (ns *NeoStorage) GetOrCreateUser(ctx context.Context, user *models.User, pmid, notificationDelay int,
-	mentioningMethod string, labels []string) error {
-
+func (ns *NeoStorage) GetOrCreateUser(ctx context.Context, user *models.User, pmid int) error {
+	labels := user.DefaultLabels()
 	labelsArg := make([]interface{}, len(labels))
 	for i := range labels {
 		labelsArg[i] = labels[i]
 	}
 	params := map[string]interface{}{"user_id": user.ID, "name": user.Name, "pmid": pmid, "labels": labelsArg,
-		"delay": notificationDelay, "mentioning": mentioningMethod}
+		"delay": models.DefaultNotificationDelay, "mentioning": models.DefaultMentioningMethod}
 	row, err := ns.client.QueryOneRetry(ctx,
 		`MERGE (u: User {uid: {user_id}}) ON CREATE SET
 		u.name={name},u.pmid={pmid},u.lbls={labels},u.notification_delay={delay},u.mentioning={mentioning} return u`,

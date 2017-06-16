@@ -28,19 +28,11 @@ const (
 	setDelayCmd         = "notifDelay"
 	mentioningMethodCmd = "mentioningMethod"
 
-	defaultNotificationDelay = 10
 
 	defaultVoiceLang      = "ru-RU"
-	AllMentioningMethod   = "all"
-	NoneMentioningMethod  = "none"
-	VoiceMentioningMethod = "voice"
-	TextMentioningMethod  = "text"
 )
 
 var (
-	mentioningMethodsList = [...]string{
-		AllMentioningMethod, NoneMentioningMethod, VoiceMentioningMethod, TextMentioningMethod,
-	}
 	supportedLangs = [...]string{
 		"af-ZA",
 		"id-ID",
@@ -141,7 +133,8 @@ var (
 		"%s - Delete label with provided name.\n%s - Show all your labels.\n"+
 		"%s - Change the time, in seconds, after which I will send notification, default - 10 sec, 0 means notify immediately.\n"+
 		"%s - Change the method, by which people can mention you, e.g: %s, %s, %s or %s.",
-		addLabelCmd, removeLabelCmd, showLabelsCmd, setDelayCmd, mentioningMethodCmd, TextMentioningMethod, VoiceMentioningMethod, AllMentioningMethod, NoneMentioningMethod)
+		addLabelCmd, removeLabelCmd, showLabelsCmd, setDelayCmd, mentioningMethodCmd,
+		models.TextMentioningMethod, models.VoiceMentioningMethod, models.AllMentioningMethod, models.NoneMentioningMethod)
 
 	notificationTextTemplate = "%s, you've been mentioned in the %s chat:"
 	errorText                = "An internal bot error occurred."
@@ -272,10 +265,8 @@ func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {
 
 func (b *Bot) syncUserWithStorage(ctx context.Context, user *models.User, userChatID int) bool {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	labelFromName := processWord(user.Name)
 	logger.WithField("user", user).Info("Saving user in the storage if doesn't exist")
-	err := b.storage.GetOrCreateUser(ctx, user, userChatID, defaultNotificationDelay, AllMentioningMethod,
-		[]string{labelFromName})
+	err := b.storage.GetOrCreateUser(ctx, user, userChatID)
 	if err != nil {
 		logger.Errorf("Cannot save user in the storage: %s", err)
 		return false
@@ -439,16 +430,6 @@ func (b *Bot) commandsListHandler(ctx context.Context, msg *models.Message) {
 	}
 }
 
-func filterByMentioningMethod(users []*models.User, method string) []*models.User {
-	var filtered []*models.User
-	for _, user := range users {
-		if user.MentioningMethod == method || user.MentioningMethod == AllMentioningMethod {
-			filtered = append(filtered, user)
-		}
-	}
-	return filtered
-}
-
 func (b *Bot) removeUserNotifications(ctx context.Context, user *models.User, chatID int) {
 	logger := logging.FromContextAndBase(ctx, gLogger).WithFields(log.Fields{"user": user, "chat_id": chatID})
 	logger.Info("Discarding not actual user notifications from the queue")
@@ -511,17 +492,17 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 	if !conf.NotifyYourself {
 		// for debug purposes
 		logger.WithField("yourself", sender).Info("Excluding yourself from the list of users to notify")
-		users = excludeUserFromList(users, sender)
+		users = models.ExcludeUserFromList(users, sender)
 	}
 	var wordsInMessage []string
 	if msg.Text != "" {
 		logger.WithField("text", msg.Text).Info("Text mentioning, leave users who can be mentioned by text")
-		users = filterByMentioningMethod(users, TextMentioningMethod)
+		users = models.FilterByMentioningMethod(users, models.TextMentioningMethod)
 		wordsInMessage = speech.UniqueWordsFromText(msg.Text)
 
 	} else {
 		logger.WithField("voice", msg.Voice).Info("Voice mentioning, leave users who can be mentioned by voice")
-		users = filterByMentioningMethod(users, VoiceMentioningMethod)
+		users = models.FilterByMentioningMethod(users, models.VoiceMentioningMethod)
 		fileContent, err := b.messenger.DownloadFile(ctx, msg.Voice.ID)
 		if err != nil {
 			logger.Errorf("Messenger doesn't return file content for voice %s: %s", msg.Voice.ID, err)
@@ -530,7 +511,7 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 		audioToRecognize := &speech.Audio{
 			Content: fileContent, Encoding: msg.Voice.Encoding, SampleRate: msg.Voice.SampleRate}
 		voiceLang := defaultVoiceLang
-		usersLabels := enumLabels(users)
+		usersLabels := models.EnumLabels(users)
 		logger.WithFields(log.Fields{"lang": voiceLang, "hints": usersLabels}).Info("Fetching words from voice message")
 		wordsInMessage, err = b.recognizer.WordsFromAudio(ctx, audioToRecognize, defaultVoiceLang, usersLabels)
 		if err != nil {
@@ -539,9 +520,9 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 			return
 		}
 	}
-	wordsInMessage = processWords(wordsInMessage)
+	wordsInMessage = models.ProcessWords(wordsInMessage)
 	logger.WithFields(log.Fields{"users": users, "words": wordsInMessage}).Info("Search mentioned users to notify")
-	users = getMentionedUsers(users, wordsInMessage)
+	users = models.GetMentionedUsers(users, wordsInMessage)
 
 	logger.WithField("users", users).Info("Users to notify")
 	b.notifyUsers(ctx, users, msg)
@@ -588,7 +569,7 @@ func (b *Bot) addUserLabelHandler(ctx context.Context, msg *models.Message) {
 	user := msg.From
 	_, label := msg.ToCommand()
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	label = processWord(label)
+	label = models.ProcessWord(label)
 
 	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
 		b.sendErrorMsg(ctx, user)
@@ -615,7 +596,7 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
 	user := msg.From
 	_, label := msg.ToCommand()
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	label = processWord(label)
+	label = models.ProcessWord(label)
 
 	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
 		b.sendErrorMsg(ctx, user)
@@ -696,9 +677,9 @@ func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *models.Messag
 		return
 	}
 	mentioningMethod = strings.ToLower(mentioningMethod)
-	ok := isValidMentioningMethod(mentioningMethod)
+	ok := models.IsValidMentioningMethod(mentioningMethod)
 	if !ok {
-		errInfo := errors.Errorf("valid values: %s", mentioningMethodsList)
+		errInfo := errors.Errorf("valid values: %s", models.MentioningMethodsList)
 		b.sendBadArgMsg(ctx, user, mentioningMethodCmd, "mentioning_method", mentioningMethod, errInfo)
 		return
 	}
@@ -715,64 +696,4 @@ func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *models.Messag
 	b.sendOKMsg(ctx, user)
 }
 
-func excludeUserFromList(users []*models.User, userToExclude *models.User) []*models.User {
-	var result []*models.User
-	for _, u := range users {
-		if u.ID == userToExclude.ID {
-			continue
-		}
-		result = append(result, u)
-	}
-	return result
-}
 
-func processWord(word string) string {
-	return strings.ToLower(word)
-}
-
-func processWords(words []string) []string {
-	result := make([]string, len(words))
-	for i, text := range words {
-		result[i] = processWord(text)
-	}
-	return result
-}
-
-func getMentionedUsers(users []*models.User, words []string) []*models.User {
-	var mentioned []*models.User
-	for _, user := range users {
-		for _, label := range user.Labels {
-			if isLabelInWords(words, label) {
-				mentioned = append(mentioned, user)
-				break
-			}
-		}
-	}
-	return mentioned
-}
-
-func isLabelInWords(words []string, label string) bool {
-	for _, word := range words {
-		if strings.HasPrefix(word, label) {
-			return true
-		}
-	}
-	return false
-}
-
-func enumLabels(users []*models.User) []string {
-	var labels []string
-	for _, user := range users {
-		labels = append(labels, user.Labels...)
-	}
-	return labels
-}
-
-func isValidMentioningMethod(value string) bool {
-	for _, method := range mentioningMethodsList {
-		if method == value {
-			return true
-		}
-	}
-	return false
-}

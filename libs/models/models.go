@@ -6,6 +6,21 @@ import (
 	"time"
 )
 
+const (
+	AllMentioningMethod      = "all"
+	NoneMentioningMethod     = "none"
+	VoiceMentioningMethod    = "voice"
+	TextMentioningMethod     = "text"
+	DefaultMentioningMethod  = AllMentioningMethod
+	DefaultNotificationDelay = 10
+)
+
+var (
+	MentioningMethodsList = [...]string{
+		AllMentioningMethod, NoneMentioningMethod, VoiceMentioningMethod, TextMentioningMethod,
+	}
+)
+
 type Message struct {
 	ID             int       `bson:"message_id"`
 	RequestID      string    `bson:"request_id"`
@@ -76,6 +91,11 @@ func (u User) String() string {
 	return logging.ObjToString(&u)
 }
 
+func (u *User) DefaultLabels() []string {
+	labelFromName := ProcessWord(u.Name)
+	return []string{labelFromName}
+}
+
 type Notification struct {
 	RequestID string    `bson:"request_id"`
 	Text      string    `bson:"text"`
@@ -98,4 +118,76 @@ func NewNotification(user *User, msgID, chatID int, text, requestID string) *Not
 
 func (n Notification) String() string {
 	return logging.ObjToString(&n)
+}
+
+func ExcludeUserFromList(users []*User, userToExclude *User) []*User {
+	var result []*User
+	for _, u := range users {
+		if u.ID == userToExclude.ID {
+			continue
+		}
+		result = append(result, u)
+	}
+	return result
+}
+
+func ProcessWord(word string) string {
+	return strings.ToLower(word)
+}
+
+func ProcessWords(words []string) []string {
+	result := make([]string, len(words))
+	for i, text := range words {
+		result[i] = ProcessWord(text)
+	}
+	return result
+}
+
+func GetMentionedUsers(users []*User, words []string) []*User {
+	var mentioned []*User
+	for _, user := range users {
+		for _, label := range user.Labels {
+			if isLabelInWords(words, label) {
+				mentioned = append(mentioned, user)
+				break
+			}
+		}
+	}
+	return mentioned
+}
+
+func isLabelInWords(words []string, label string) bool {
+	for _, word := range words {
+		if strings.HasPrefix(word, label) {
+			return true
+		}
+	}
+	return false
+}
+
+func EnumLabels(users []*User) []string {
+	var labels []string
+	for _, user := range users {
+		labels = append(labels, user.Labels...)
+	}
+	return labels
+}
+
+func IsValidMentioningMethod(value string) bool {
+	for _, method := range MentioningMethodsList {
+		if method == value {
+			return true
+		}
+	}
+	return false
+}
+
+func FilterByMentioningMethod(users []*User, method string) []*User {
+	var filtered []*User
+	for _, user := range users {
+		if user.MentioningMethod == method || user.MentioningMethod == AllMentioningMethod {
+			filtered = append(filtered, user)
+		}
+	}
+	return filtered
 }
