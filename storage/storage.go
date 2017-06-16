@@ -8,6 +8,7 @@ import (
 
 	"reflect"
 
+	"database/sql"
 	"github.com/johnnadratowski/golang-neo4j-bolt-driver/structures/graph"
 	"github.com/pkg/errors"
 )
@@ -21,8 +22,9 @@ type Storage interface {
 	DeleteChat(ctx context.Context, chatID int) error
 	RemoveUserFromChat(ctx context.Context, chatID, userID int) error
 	AddUserToChat(ctx context.Context, chatID, userID int) error
-	GetOrCreateUser(ctx context.Context, user *models.User, notificationDelay int, mentioningMethod string,
+	GetOrCreateUser(ctx context.Context, user *models.User, pmid, notificationDelay int, mentioningMethod string,
 		labels []string) error
+	GetUser(ctx context.Context, user *models.User) (bool, error)
 	AddLabelToUser(ctx context.Context, userID int, label string) error
 	SetNotificationDelay(ctx context.Context, userID, delay int) error
 	SetMentioningMethod(ctx context.Context, userID int, method string) error
@@ -80,14 +82,14 @@ func (ns *NeoStorage) AddUserToChat(ctx context.Context, chatID, userID int) err
 	return err
 }
 
-func (ns *NeoStorage) GetOrCreateUser(ctx context.Context, user *models.User, notificationDelay int,
+func (ns *NeoStorage) GetOrCreateUser(ctx context.Context, user *models.User, pmid, notificationDelay int,
 	mentioningMethod string, labels []string) error {
 
 	labelsArg := make([]interface{}, len(labels))
 	for i := range labels {
 		labelsArg[i] = labels[i]
 	}
-	params := map[string]interface{}{"user_id": user.ID, "name": user.Name, "pmid": user.PMID, "labels": labelsArg,
+	params := map[string]interface{}{"user_id": user.ID, "name": user.Name, "pmid": pmid, "labels": labelsArg,
 		"delay": notificationDelay, "mentioning": mentioningMethod}
 	row, err := ns.client.QueryOneRetry(ctx,
 		`MERGE (u: User {uid: {user_id}}) ON CREATE SET
@@ -98,6 +100,22 @@ func (ns *NeoStorage) GetOrCreateUser(ctx context.Context, user *models.User, no
 	}
 	err = rowToUser(row, user)
 	return errors.Wrap(err, "user deserialization failed")
+}
+
+func (ns *NeoStorage) GetUser(ctx context.Context, user *models.User) (bool, error) {
+	params := map[string]interface{}{"user_id": user.ID}
+	row, err := ns.client.QueryOneRetry(ctx, `MATCH (u: User {uid: {user_id}}) return u`, params)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	err = rowToUser(row, user)
+	if err != nil {
+		return false, errors.Wrap(err, "user deserialization failed")
+	}
+	return true, nil
 }
 
 func (ns *NeoStorage) AddLabelToUser(ctx context.Context, userID int, label string) error {

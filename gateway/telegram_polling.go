@@ -108,9 +108,6 @@ func (tp *TelegramPoller) updateMessageToModel(updateMessage *tgbotapi.Message) 
 	if !message.IsBotLeft {
 		message.LeftChatMember = transformUser(updateMessage.LeftChatMember)
 	}
-	if updateMessage.Chat.IsPrivate() {
-		message.From.PMID = chatID
-	}
 	return message, nil
 }
 

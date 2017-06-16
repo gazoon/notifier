@@ -62,10 +62,10 @@ func (v Voice) String() string {
 type User struct {
 	ID int `bson:"id"`
 	//id of the private chat with the user
-	PMID     int    `bson:"pmid"`
 	Username string `bson:"username"`
 	Name     string `bson:"name"`
 
+	PMID              int      `bson:"pmid"`
 	NotificationDelay int      `bson:"-"`
 	Labels            []string `bson:"-"`
 	MentioningMethod  string   `bson:"-"`

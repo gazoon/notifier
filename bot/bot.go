@@ -270,16 +270,28 @@ func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {
 	handler.Func(ctx, msg)
 }
 
-func (b *Bot) syncUser(ctx context.Context, user *models.User) bool {
+func (b *Bot) syncUserWithStorage(ctx context.Context, user *models.User, userChatID int) bool {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	labelFromName := processWord(user.Name)
-	logger.WithField("user", user).Info("Saving user in the storage")
-	err := b.storage.GetOrCreateUser(ctx, user, defaultNotificationDelay, AllMentioningMethod, []string{labelFromName})
+	logger.WithField("user", user).Info("Saving user in the storage if doesn't exist")
+	err := b.storage.GetOrCreateUser(ctx, user, userChatID, defaultNotificationDelay, AllMentioningMethod,
+		[]string{labelFromName})
 	if err != nil {
 		logger.Errorf("Cannot save user in the storage: %s", err)
 		return false
 	}
 	return true
+}
+
+func (b *Bot) updateUserFromStorage(ctx context.Context, user *models.User) bool {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithField("user", user).Info("Get user from storage")
+	isExists, err := b.storage.GetUser(ctx, user)
+	if err != nil {
+		logger.Errorf("Storage doesn't return user data: %s", err)
+		return false
+	}
+	return isExists
 }
 
 func (b *Bot) createChat(ctx context.Context, chat *models.Chat) bool {
@@ -418,7 +430,7 @@ func (b *Bot) commandsListHandler(ctx context.Context, msg *models.Message) {
 	user := msg.From
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
-	b.syncUser(ctx, user)
+	b.syncUserWithStorage(ctx, user, msg.Chat.ID)
 
 	logger.WithField("user_id", user.ID).Info("Sending the list of commands")
 	_, err := b.messenger.SendText(ctx, user.PMID, commandsText)
@@ -474,10 +486,13 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 	if !b.createChat(ctx, msg.Chat) {
 		return
 	}
+	sender := msg.From
+	b.addUserToChat(ctx, msg.Chat.ID, sender.ID)
 
-	b.addUserToChat(ctx, msg.Chat.ID, msg.From.ID)
-
-	b.removeUserNotifications(ctx, msg.From, msg.Chat.ID)
+	isExists := b.updateUserFromStorage(ctx, sender)
+	if isExists {
+		b.removeUserNotifications(ctx, sender, msg.Chat.ID)
+	}
 
 	if msg.Text == "" && msg.Voice == nil {
 		logger.Info("Message without text or voice, skipping notification part")
@@ -495,8 +510,8 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 	users = b.filterNotChatUsers(ctx, users, msg.Chat)
 	if !conf.NotifyYourself {
 		// for debug purposes
-		logger.WithField("yourself", msg.From).Info("Excluding yourself from the list of users to notify")
-		users = excludeUserFromList(users, msg.From)
+		logger.WithField("yourself", sender).Info("Excluding yourself from the list of users to notify")
+		users = excludeUserFromList(users, sender)
 	}
 	var wordsInMessage []string
 	if msg.Text != "" {
@@ -575,7 +590,7 @@ func (b *Bot) addUserLabelHandler(ctx context.Context, msg *models.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	label = processWord(label)
 
-	if !b.syncUser(ctx, user) {
+	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
 		b.sendErrorMsg(ctx, user)
 		return
 	}
@@ -602,7 +617,7 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	label = processWord(label)
 
-	if !b.syncUser(ctx, user) {
+	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
 		b.sendErrorMsg(ctx, user)
 		return
 	}
@@ -626,7 +641,7 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
 func (b *Bot) showUserLabelsHandler(ctx context.Context, msg *models.Message) {
 	user := msg.From
 
-	if !b.syncUser(ctx, user) {
+	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
 		b.sendErrorMsg(ctx, user)
 		return
 	}
@@ -638,7 +653,7 @@ func (b *Bot) setDelayHandler(ctx context.Context, msg *models.Message) {
 	user := msg.From
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
-	if !b.syncUser(ctx, user) {
+	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
 		b.sendErrorMsg(ctx, user)
 		return
 	}
@@ -670,7 +685,7 @@ func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *models.Messag
 	user := msg.From
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
-	if !b.syncUser(ctx, user) {
+	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
 		b.sendErrorMsg(ctx, user)
 		return
 	}
