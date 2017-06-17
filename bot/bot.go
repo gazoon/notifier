@@ -22,14 +22,14 @@ import (
 )
 
 const (
-	addLabelCmd         = "addLabel"
-	removeLabelCmd      = "removeLabel"
-	showLabelsCmd       = "showLabels"
-	setDelayCmd         = "notifDelay"
-	mentioningMethodCmd = "mentioningMethod"
+	addLabelCmd                = "addLabel"
+	removeLabelCmd             = "removeLabel"
+	showLabelsCmd              = "showLabels"
+	setDelayCmd                = "notifDelay"
+	mentioningMethodCmd        = "mentioningMethod"
+	deleteSentNotificationsCmd = "deleteSentNotifications"
 
-
-	defaultVoiceLang      = "ru-RU"
+	defaultVoiceLang = "ru-RU"
 )
 
 var (
@@ -132,9 +132,11 @@ var (
 	commandsText = fmt.Sprintf("Hi! I can do following for you:\n%s - Add new label for further notifications.\n"+
 		"%s - Delete label with provided name.\n%s - Show all your labels.\n"+
 		"%s - Change the time, in seconds, after which I will send notification, default - 10 sec, 0 means notify immediately.\n"+
-		"%s - Change the method, by which people can mention you, e.g: %s, %s, %s or %s.",
+		"%s - Change the method, by which people can mention you, e.g: %s, %s, %s or %s.\n"+
+		"%s - true or false - can I delete already sent notifications in case you showed some activity in the chat.",
 		addLabelCmd, removeLabelCmd, showLabelsCmd, setDelayCmd, mentioningMethodCmd,
-		models.TextMentioningMethod, models.VoiceMentioningMethod, models.AllMentioningMethod, models.NoneMentioningMethod)
+		models.TextMentioningMethod, models.VoiceMentioningMethod, models.AllMentioningMethod, models.NoneMentioningMethod,
+		deleteSentNotificationsCmd)
 
 	notificationTextTemplate = "%s, you've been mentioned in the %s chat:"
 	errorText                = "An internal bot error occurred."
@@ -159,26 +161,26 @@ type Handler struct {
 }
 
 type Bot struct {
-	messagesQueue     msgsqueue.Consumer
-	notificationQueue notifqueue.Producer
-	registry          notifregistry.ReadDeleter
-	messenger         messenger.Messenger
-	storage           storage.Storage
-	recognizer        speech.Recognizer
-	commandsRegister  map[string]*Handler
-	wg                sync.WaitGroup
+	messagesQueue         msgsqueue.Consumer
+	notificationQueue     notifqueue.Producer
+	notificationsRegistry notifregistry.ReadDeleter
+	messenger             messenger.Messenger
+	storage               storage.Storage
+	recognizer            speech.Recognizer
+	commandsRegister      map[string]*Handler
+	wg                    sync.WaitGroup
 }
 
-func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer, registry notifregistry.ReadDeleter,
+func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer, notificationsRegistry notifregistry.ReadDeleter,
 	messenger messenger.Messenger, storage storage.Storage, recognizer speech.Recognizer) *Bot {
 
 	b := &Bot{
-		messagesQueue:     messagesQueue,
-		notificationQueue: notificationQueue,
-		registry:          registry,
-		messenger:         messenger,
-		storage:           storage,
-		recognizer:        recognizer,
+		messagesQueue:         messagesQueue,
+		notificationQueue:     notificationQueue,
+		notificationsRegistry: notificationsRegistry,
+		messenger:             messenger,
+		storage:               storage,
+		recognizer:            recognizer,
 	}
 	b.commandsRegister = b.createCommandRegister()
 	return b
@@ -186,11 +188,12 @@ func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer
 
 func (b *Bot) createCommandRegister() map[string]*Handler {
 	register := map[string]*Handler{
-		addLabelCmd:         {b.addUserLabelHandler, "addUserLabel"},
-		removeLabelCmd:      {b.removeUserLabelHandler, "removeUserLabel"},
-		showLabelsCmd:       {b.showUserLabelsHandler, "showUserLabels"},
-		setDelayCmd:         {b.setDelayHandler, "setNotificationDelay"},
-		mentioningMethodCmd: {b.setMentioningMethodHandler, "setMentioningMethod"},
+		addLabelCmd:                {b.addUserLabelHandler, "addUserLabel"},
+		removeLabelCmd:             {b.removeUserLabelHandler, "removeUserLabel"},
+		showLabelsCmd:              {b.showUserLabelsHandler, "showUserLabels"},
+		setDelayCmd:                {b.setDelayHandler, "setNotificationDelay"},
+		mentioningMethodCmd:        {b.setMentioningMethodHandler, "setMentioningMethod"},
+		deleteSentNotificationsCmd: {b.setCanDeleteNotificationsHandler, "setCanDeleteNotifications"},
 	}
 	for cmdName, handler := range register {
 		register[strings.ToLower(cmdName)] = handler
@@ -437,9 +440,12 @@ func (b *Bot) removeUserNotifications(ctx context.Context, user *models.User, ch
 	if err != nil {
 		logger.Errorf("Cannot clear user notifications in the queue: %s", err)
 	}
-
+	if !user.CanDeleteNotifications {
+		logger.Info("User preferred not to delete already sent notifications")
+		return
+	}
 	logger.Info("Get already sent notifications to delete")
-	sentNotifications, err := b.registry.Get(ctx, user.ID, chatID)
+	sentNotifications, err := b.notificationsRegistry.Get(ctx, user.ID, chatID)
 	if err != nil {
 		logger.Errorf("Cannot retrieve sent notifications from the registry: %s", err)
 		return
@@ -452,7 +458,7 @@ func (b *Bot) removeUserNotifications(ctx context.Context, user *models.User, ch
 			logger.Errorf("Cannot delete notification message from the messenger: %s", err)
 		}
 		logger.Info("Delete sent message from registry")
-		err = b.registry.Delete(ctx, sentMessage)
+		err = b.notificationsRegistry.Delete(ctx, sentMessage)
 		if err != nil {
 			logger.Errorf("Cannot delete sent message from the registry: %s", err)
 		}
@@ -696,4 +702,50 @@ func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *models.Messag
 	b.sendOKMsg(ctx, user)
 }
 
+func (b *Bot) setCanDeleteNotificationsHandler(ctx context.Context, msg *models.Message) {
+	user := msg.From
+	logger := logging.FromContextAndBase(ctx, gLogger)
 
+	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
+		b.sendErrorMsg(ctx, user)
+		return
+	}
+
+	_, flagArgValue := msg.ToCommand()
+	if flagArgValue == "" {
+		b.sendMissArgMsg(ctx, user, deleteSentNotificationsCmd, "can_or_not")
+		return
+	}
+	canDelete, err := strconv.ParseBool(flagArgValue)
+	if err != nil {
+		b.sendBadArgMsg(ctx, user, deleteSentNotificationsCmd, "can_or_not", flagArgValue, err)
+		return
+	}
+
+	logger.WithFields(log.Fields{"user": user, "can_delete_notifications": canDelete}).
+		Info("Set custom value for the CanDeleteNotifications flag")
+
+	if user.CanDeleteNotifications == canDelete {
+		logger.Info("User already have the save value no need to update")
+		b.sendOKMsg(ctx, user)
+		return
+	}
+
+	if canDelete {
+		logger.Info("User want to set flag to true, delete all previous notifications from the registry")
+		err = b.notificationsRegistry.DeleteAllForUser(ctx, user.ID)
+		if err != nil {
+			logger.Errorf("Notifications registry falied to delete all user notifications: %s", err)
+		}
+	}
+
+	logger.Infof("Set CanDeleteNotifications to %v in the storage", canDelete)
+	err = b.storage.SetCanDeleteNotifications(ctx, user.ID, canDelete)
+	if err != nil {
+		logger.Errorf("Cannot save user CanDeleteNotifications setting in the storage: %s", err)
+		b.sendErrorMsg(ctx, user)
+		return
+	}
+
+	b.sendOKMsg(ctx, user)
+}

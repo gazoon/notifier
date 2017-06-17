@@ -8,6 +8,7 @@ import (
 	"notifier/libs/models"
 	"notifier/libs/notifications_registry"
 	"notifier/libs/queue/notifications"
+	"notifier/storage"
 	"sync"
 	"time"
 )
@@ -19,6 +20,7 @@ var (
 type Sender struct {
 	notificationQueue notifqueue.Consumer
 	messenger         messenger.Messenger
+	storage           storage.Storage
 	registry          notifregistry.Saver
 	wg                sync.WaitGroup
 }
@@ -28,8 +30,10 @@ func prepareContext(requestID string) context.Context {
 	return ctx
 }
 
-func New(notificationQueue notifqueue.Consumer, registry notifregistry.Saver, messenger messenger.Messenger) *Sender {
-	return &Sender{notificationQueue: notificationQueue, registry: registry, messenger: messenger}
+func New(notificationQueue notifqueue.Consumer, registry notifregistry.Saver, messenger messenger.Messenger,
+	storage storage.Storage) *Sender {
+
+	return &Sender{notificationQueue: notificationQueue, registry: registry, messenger: messenger, storage: storage}
 }
 
 func (s *Sender) Start() {
@@ -55,15 +59,21 @@ func (s *Sender) onNotification(notification *models.Notification) {
 	ctx := prepareContext(notification.RequestID)
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("notification", notification).Info("Notification received from outgoing queue")
+	s.updateUserFromStorage(ctx, notification.User)
 	sentMessageIDs := s.sendNotification(ctx, notification)
 	s.saveToRegistry(ctx, notification, sentMessageIDs)
 }
 
 func (s *Sender) saveToRegistry(ctx context.Context, notification *models.Notification, messageIDs []int) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
+	user := notification.User
+	if !user.CanDeleteNotifications {
+		logger.WithField("user_id", user.ID).Info("CanDeleteNotifications is false no need to save notifications to the registry")
+		return
+	}
 	for _, messageID := range messageIDs {
 		message := &notifregistry.SentNotification{
-			UserID:     notification.User.ID,
+			UserID:     user.ID,
 			FromChatID: notification.ChatID,
 			MessageID:  messageID,
 			SentAt:     time.Now(),
@@ -74,6 +84,15 @@ func (s *Sender) saveToRegistry(ctx context.Context, notification *models.Notifi
 		if err != nil {
 			logger.Errorf("Registry save failed: %s", err)
 		}
+	}
+}
+
+func (s *Sender) updateUserFromStorage(ctx context.Context, user *models.User) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithField("user", user).Info("Get user from storage")
+	_, err := s.storage.GetUser(ctx, user)
+	if err != nil {
+		logger.Errorf("Storage failed to return user data: %s", err)
 	}
 }
 

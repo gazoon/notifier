@@ -27,6 +27,7 @@ type Storage interface {
 	AddLabelToUser(ctx context.Context, userID int, label string) error
 	SetNotificationDelay(ctx context.Context, userID, delay int) error
 	SetMentioningMethod(ctx context.Context, userID int, method string) error
+	SetCanDeleteNotifications(ctx context.Context, userID int, canDelete bool) error
 	RemoveLabelFromUser(ctx context.Context, userID int, label string) error
 	GetChatUsers(ctx context.Context, chatID int) ([]*models.User, error)
 }
@@ -53,6 +54,11 @@ func (ns *NeoStorage) SetNotificationDelay(ctx context.Context, userID, delay in
 func (ns *NeoStorage) SetMentioningMethod(ctx context.Context, userID int, method string) error {
 	params := map[string]interface{}{"user_id": userID, "mentioning": method}
 	return ns.client.ExecRetry(ctx, `MATCH (u: User {uid: {user_id}}) SET u.mentioning={mentioning}`, params)
+}
+
+func (ns *NeoStorage) SetCanDeleteNotifications(ctx context.Context, userID int, canDelete bool) error {
+	params := map[string]interface{}{"user_id": userID, "can_delete": canDelete}
+	return ns.client.ExecRetry(ctx, `MATCH (u: User {uid: {user_id}}) SET u.delete_notifications={can_delete}`, params)
 }
 
 func (ns *NeoStorage) CreateChat(ctx context.Context, chat *models.Chat) error {
@@ -87,11 +93,19 @@ func (ns *NeoStorage) GetOrCreateUser(ctx context.Context, user *models.User, pm
 	for i := range labels {
 		labelsArg[i] = labels[i]
 	}
-	params := map[string]interface{}{"user_id": user.ID, "name": user.Name, "pmid": pmid, "labels": labelsArg,
-		"delay": models.DefaultNotificationDelay, "mentioning": models.DefaultMentioningMethod}
+	params := map[string]interface{}{
+		"user_id":    user.ID,
+		"name":       user.Name,
+		"pmid":       pmid,
+		"labels":     labelsArg,
+		"delay":      models.DefaultNotificationDelay,
+		"mentioning": models.DefaultMentioningMethod,
+		"can_delete": models.DefaultDeleteNotificationsFlag,
+	}
 	row, err := ns.client.QueryOneRetry(ctx,
 		`MERGE (u: User {uid: {user_id}}) ON CREATE SET
-		u.name={name},u.pmid={pmid},u.lbls={labels},u.notification_delay={delay},u.mentioning={mentioning} return u`,
+		u.name={name},u.pmid={pmid},u.lbls={labels},u.notification_delay={delay},u.mentioning={mentioning},
+		u.delete_notifications={can_delete} return u`,
 		params)
 	if err != nil {
 		return err
@@ -190,13 +204,14 @@ func rowToUser(row []interface{}, user *models.User) error {
 	notificationDelay, isDelayOk := data["notification_delay"].(int64)
 	lbls, isLabelsOk := data["lbls"].([]interface{})
 	mentioningMethod, isMentioningOk := data["mentioning"].(string)
-	if !isUserIdOk || !isPmIdOk || !isNameOk || !isDelayOk || !isLabelsOk || !isMentioningOk {
+	deleteNotifications, isDeleteNotificationsOk := data["delete_notifications"].(bool)
+	if !isUserIdOk || !isPmIdOk || !isNameOk || !isDelayOk || !isLabelsOk || !isMentioningOk || !isDeleteNotificationsOk {
 		return errors.Errorf(
-			"expected uid-int64,pmid-int64,name-string,delay-int64,labels-[]interface{},mentioning-string"+
-				" properties, got %v %v %v %v %v %v",
+			"expected uid-int64,pmid-int64,name-string,delay-int64,labels-[]interface{},mentioning-string,delete_notifications-bool"+
+				" properties, got %v %v %v %v %v %v %v",
 			reflect.TypeOf(data["uid"]), reflect.TypeOf(data["pmid"]),
 			reflect.TypeOf(data["name"]), reflect.TypeOf(data["notification_delay"]), reflect.TypeOf(data["lbls"]),
-			reflect.TypeOf(data["mentioning"]))
+			reflect.TypeOf(data["mentioning"]), reflect.TypeOf(data["delete_notifications"]))
 	}
 
 	labels := make([]string, len(lbls))
@@ -214,5 +229,6 @@ func rowToUser(row []interface{}, user *models.User) error {
 	user.NotificationDelay = int(notificationDelay)
 	user.MentioningMethod = mentioningMethod
 	user.Labels = labels
+	user.CanDeleteNotifications = deleteNotifications
 	return nil
 }

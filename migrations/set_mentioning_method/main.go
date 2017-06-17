@@ -3,9 +3,9 @@ package main
 import (
 	"context"
 	"flag"
-	"notifier/bot"
 	"notifier/config"
 	"notifier/core"
+	"notifier/libs/models"
 )
 
 func main() {
@@ -19,7 +19,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	params := map[string]interface{}{"method": bot.AllMentioningMethod}
+	params := map[string]interface{}{"method": models.AllMentioningMethod}
 	err = db.Exec(context.Background(), `match (u:User) set u.mentioning={method}`, params)
 	if err != nil {
 		panic(err)

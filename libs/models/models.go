@@ -7,12 +7,13 @@ import (
 )
 
 const (
-	AllMentioningMethod      = "all"
-	NoneMentioningMethod     = "none"
-	VoiceMentioningMethod    = "voice"
-	TextMentioningMethod     = "text"
-	DefaultMentioningMethod  = AllMentioningMethod
-	DefaultNotificationDelay = 10
+	AllMentioningMethod            = "all"
+	NoneMentioningMethod           = "none"
+	VoiceMentioningMethod          = "voice"
+	TextMentioningMethod           = "text"
+	DefaultMentioningMethod        = AllMentioningMethod
+	DefaultNotificationDelay       = 10
+	DefaultDeleteNotificationsFlag = true
 )
 
 var (
@@ -80,11 +81,12 @@ type User struct {
 	Username string `bson:"username"`
 	Name     string `bson:"name"`
 
-	PMID              int      `bson:"pmid"`
-	NotificationDelay int      `bson:"-"`
-	Labels            []string `bson:"-"`
-	MentioningMethod  string   `bson:"-"`
-	Lang              *string  `bson:"-"`
+	PMID                   int      `bson:"pmid"`
+	NotificationDelay      int      `bson:"-"`
+	CanDeleteNotifications bool     `bson:"-"`
+	Labels                 []string `bson:"-"`
+	MentioningMethod       string   `bson:"-"`
+	Lang                   *string  `bson:"-"`
 }
 
 func (u User) String() string {

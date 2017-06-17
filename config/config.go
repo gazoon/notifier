@@ -15,17 +15,17 @@ var (
 
 type ServiceConfig struct {
 	config.BaseConfig
-	BotWorkersNum     int                      `json:"bot_workers_num"`
-	SenderWorkerNum   int                      `json:"sender_workers_num"`
-	NotifyYourself    bool                     `json:"notify_yourself"`
-	Neo               *config.DatabaseSettings `json:"neo"`
-	MongoNotification *config.DatabaseQueue    `json:"mongo_notification"`
-	MongoMessages     *config.DatabaseQueue    `json:"mongo_messages"`
-	MongoRegistry     *config.DatabaseSettings `json:"mongo_registry"`
-	Telegram          *config.TelegramSettings `json:"telegram"`
-	TelegramPolling   *config.TelegramPolling  `json:"telegram_polling"`
-	Logging           *config.Logging          `json:"logging"`
-	GoogleAPI         *config.GoogleAPI        `json:"google_api"`
+	BotWorkersNum              int                      `json:"bot_workers_num"`
+	SenderWorkerNum            int                      `json:"sender_workers_num"`
+	NotifyYourself             bool                     `json:"notify_yourself"`
+	Neo                        *config.DatabaseSettings `json:"neo"`
+	MongoNotification          *config.DatabaseQueue    `json:"mongo_notification"`
+	MongoMessages              *config.DatabaseQueue    `json:"mongo_messages"`
+	MongoNotificationsRegistry *config.DatabaseSettings `json:"mongo_registry"`
+	Telegram                   *config.TelegramSettings `json:"telegram"`
+	TelegramPolling            *config.TelegramPolling  `json:"telegram_polling"`
+	Logging                    *config.Logging          `json:"logging"`
+	GoogleAPI                  *config.GoogleAPI        `json:"google_api"`
 }
 
 func Initialization(configPath string) {

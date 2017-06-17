@@ -21,7 +21,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	mongoRegistry, err := core.CreateMongoRegistry()
+	mongoRegistry, err := core.CreateMongoNotificationsRegistry()
 	if err != nil {
 		panic(err)
 	}

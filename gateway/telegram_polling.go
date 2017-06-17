@@ -153,7 +153,7 @@ func (tp *TelegramPoller) Start() error {
 				time.Sleep(time.Second * time.Duration(retryDelay))
 				continue
 			}
-			gLogger.Infof("Telegram API returns updates: %s", updates)
+			gLogger.Infof("Telegram API returns updates: %+v", updates)
 			for i := range updates {
 				update := &updates[i]
 				if update.UpdateID >= updatesConf.Offset {

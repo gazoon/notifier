@@ -37,6 +37,7 @@ type Saver interface {
 type ReadDeleter interface {
 	Get(ctx context.Context, userID, fromChatID int) ([]*SentNotification, error)
 	Delete(ctx context.Context, msg *SentNotification) error
+	DeleteAllForUser(ctx context.Context, userID int) error
 }
 
 type MongoRegistry struct {
@@ -66,6 +67,11 @@ func (r *MongoRegistry) Save(ctx context.Context, msg *SentNotification) error {
 
 func (r *MongoRegistry) Delete(ctx context.Context, msg *SentNotification) error {
 	_, err := r.db.Remove(ctx, bson.M{"user_id": msg.UserID, "message_id": msg.MessageID})
+	return err
+}
+
+func (r *MongoRegistry) DeleteAllForUser(ctx context.Context, userID int) error {
+	_, err := r.db.Remove(ctx, bson.M{"user_id": userID})
 	return err
 }
 
