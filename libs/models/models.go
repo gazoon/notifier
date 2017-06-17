@@ -14,11 +14,103 @@ const (
 	DefaultMentioningMethod        = AllMentioningMethod
 	DefaultNotificationDelay       = 10
 	DefaultDeleteNotificationsFlag = true
+	DefaultLang                    = "ru-RU"
 )
 
 var (
-	MentioningMethodsList = [...]string{
+	MentioningMethodsList = []string{
 		AllMentioningMethod, NoneMentioningMethod, VoiceMentioningMethod, TextMentioningMethod,
+	}
+	SupportedLangsList = []string{
+		"af-ZA",
+		"id-ID",
+		"ms-MY",
+		"ca-ES",
+		"cs-CZ",
+		"da-DK",
+		"de-DE",
+		"en-AU",
+		"en-CA",
+		"en-GB",
+		"en-IN",
+		"en-IE",
+		"en-NZ",
+		"en-PH",
+		"en-ZA",
+		"en-US",
+		"es-AR",
+		"es-BO",
+		"es-CL",
+		"es-CO",
+		"es-CR",
+		"es-EC",
+		"es-SV",
+		"es-ES",
+		"es-US",
+		"es-GT",
+		"es-HN",
+		"es-MX",
+		"es-NI",
+		"es-PA",
+		"es-PY",
+		"es-PE",
+		"es-PR",
+		"es-DO",
+		"es-UY",
+		"es-VE",
+		"eu-ES",
+		"fil-PH",
+		"fr-CA",
+		"fr-FR",
+		"gl-ES",
+		"hr-HR",
+		"zu-ZA",
+		"is-IS",
+		"it-IT",
+		"lt-LT",
+		"hu-HU",
+		"nl-NL",
+		"nb-NO",
+		"pl-PL",
+		"pt-BR",
+		"pt-PT",
+		"ro-RO",
+		"sk-SK",
+		"sl-SI",
+		"fi-FI",
+		"sv-SE",
+		"vi-VN",
+		"tr-TR",
+		"el-GR",
+		"bg-BG",
+		"ru-RU",
+		"sr-RS",
+		"uk-UA",
+		"he-IL",
+		"ar-IL",
+		"ar-JO",
+		"ar-AE",
+		"ar-BH",
+		"ar-DZ",
+		"ar-SA",
+		"ar-IQ",
+		"ar-KW",
+		"ar-MA",
+		"ar-TN",
+		"ar-OM",
+		"ar-PS",
+		"ar-QA",
+		"ar-LB",
+		"ar-EG",
+		"fa-IR",
+		"hi-IN",
+		"th-TH",
+		"ko-KR",
+		"cmn-Hant-TW",
+		"yue-Hant-HK",
+		"ja-JP",
+		"cmn-Hans-HK",
+		"cmn-Hans-CN",
 	}
 )
 
@@ -86,7 +178,6 @@ type User struct {
 	CanDeleteNotifications bool     `bson:"-"`
 	Labels                 []string `bson:"-"`
 	MentioningMethod       string   `bson:"-"`
-	Lang                   *string  `bson:"-"`
 }
 
 func (u User) String() string {
@@ -175,13 +266,37 @@ func EnumLabels(users []*User) []string {
 	return labels
 }
 
-func IsValidMentioningMethod(value string) bool {
-	for _, method := range MentioningMethodsList {
+func IsValidMentioningMethod(method string) bool {
+	for _, value := range MentioningMethodsList {
 		if method == value {
 			return true
 		}
 	}
 	return false
+}
+
+func IsSupportedLang(lang string) bool {
+	for _, value := range SupportedLangsList {
+		if lang == value {
+			return true
+		}
+	}
+	return false
+}
+
+func LangToSupportedFormat(lang string) string {
+	langPartsSeparator := "-"
+	parts := strings.Split(lang, langPartsSeparator)
+	for i, part := range parts {
+		var formattedPart string
+		if i == 0 {
+			formattedPart = strings.ToLower(part)
+		} else {
+			formattedPart = strings.ToUpper(part)
+		}
+		parts[i] = formattedPart
+	}
+	return strings.Join(parts, langPartsSeparator)
 }
 
 func FilterByMentioningMethod(users []*User, method string) []*User {

@@ -16,9 +16,10 @@ import (
 
 	"notifier/libs/speech"
 
+	"notifier/libs/notifications_registry"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
-	"notifier/libs/notifications_registry"
 )
 
 const (
@@ -27,116 +28,27 @@ const (
 	showLabelsCmd              = "showLabels"
 	setDelayCmd                = "notifDelay"
 	mentioningMethodCmd        = "mentioningMethod"
+	setLangCmd                 = "setLanguage"
 	deleteSentNotificationsCmd = "deleteSentNotifications"
-
-	defaultVoiceLang = "ru-RU"
-)
-
-var (
-	supportedLangs = [...]string{
-		"af-ZA",
-		"id-ID",
-		"ms-MY",
-		"ca-ES",
-		"cs-CZ",
-		"da-DK",
-		"de-DE",
-		"en-AU",
-		"en-CA",
-		"en-GB",
-		"en-IN",
-		"en-IE",
-		"en-NZ",
-		"en-PH",
-		"en-ZA",
-		"en-US",
-		"es-AR",
-		"es-BO",
-		"es-CL",
-		"es-CO",
-		"es-CR",
-		"es-EC",
-		"es-SV",
-		"es-ES",
-		"es-US",
-		"es-GT",
-		"es-HN",
-		"es-MX",
-		"es-NI",
-		"es-PA",
-		"es-PY",
-		"es-PE",
-		"es-PR",
-		"es-DO",
-		"es-UY",
-		"es-VE",
-		"eu-ES",
-		"fil-PH",
-		"fr-CA",
-		"fr-FR",
-		"gl-ES",
-		"hr-HR",
-		"zu-ZA",
-		"is-IS",
-		"it-IT",
-		"lt-LT",
-		"hu-HU",
-		"nl-NL",
-		"nb-NO",
-		"pl-PL",
-		"pt-BR",
-		"pt-PT",
-		"ro-RO",
-		"sk-SK",
-		"sl-SI",
-		"fi-FI",
-		"sv-SE",
-		"vi-VN",
-		"tr-TR",
-		"el-GR",
-		"bg-BG",
-		"ru-RU",
-		"sr-RS",
-		"uk-UA",
-		"he-IL",
-		"ar-IL",
-		"ar-JO",
-		"ar-AE",
-		"ar-BH",
-		"ar-DZ",
-		"ar-SA",
-		"ar-IQ",
-		"ar-KW",
-		"ar-MA",
-		"ar-TN",
-		"ar-OM",
-		"ar-PS",
-		"ar-QA",
-		"ar-LB",
-		"ar-EG",
-		"fa-IR",
-		"hi-IN",
-		"th-TH",
-		"ko-KR",
-		"cmn-Hant-TW",
-		"yue-Hant-HK",
-		"ja-JP",
-		"cmn-Hans-HK",
-		"cmn-Hans-CN",
-	}
 )
 
 var (
 	gLogger = logging.WithPackage("bot")
 
-	commandsText = fmt.Sprintf("Hi! I can do following for you:\n%s - Add new label for further notifications.\n"+
-		"%s - Delete label with provided name.\n%s - Show all your labels.\n"+
-		"%s - Change the time, in seconds, after which I will send notification, default - 10 sec, 0 means notify immediately.\n"+
-		"%s - Change the method, by which people can mention you, e.g: %s, %s, %s or %s.\n"+
-		"%s - true or false - can I delete already sent notifications in case you showed some activity in the chat.",
+	commandsText = fmt.Sprintf("Hi! I can do following for you:\n\n"+
+		"%s - Add new label for further notifications.\n\n"+
+		"%s - Delete label with provided name.\n\n"+
+		"%s - Show all your labels.\n\n"+
+		"%s - Change the time, in seconds, after which I will send notification, default - 10 sec, 0 means notify immediately.\n\n"+
+		"%s - Change the method, by which people can mention you, e.g: %s, %s, %s or %s.\n\n"+
+		"%s - true or false - can I delete already sent notifications in case you showed some activity in the chat.\n\n"+
+		"%s - language of voice messages. This command works only in group chats.",
 		addLabelCmd, removeLabelCmd, showLabelsCmd, setDelayCmd, mentioningMethodCmd,
 		models.TextMentioningMethod, models.VoiceMentioningMethod, models.AllMentioningMethod, models.NoneMentioningMethod,
-		deleteSentNotificationsCmd)
+		deleteSentNotificationsCmd, setLangCmd)
+	chatGreetingTemplate = "Hi, %s! I will notify users in this chat if they was mentioned in the messages.\n" +
+		"Your current language for voice messages is %s. You always can change it, to do this type:\n" +
+		setLangCmd + " {desired_language}"
 
 	notificationTextTemplate = "%s, you've been mentioned in the %s chat:"
 	errorText                = "An internal bot error occurred."
@@ -144,7 +56,9 @@ var (
 	cmdArgMissedTextTemplate = "You didn't provide a value for {%s} argument\nEnter %s {%s}"
 	cmdBadArgTextTemplate    = "You provided a bad value for {%s} argument: %s."
 	recognitionErrTemplate   = "Cannot recognize voice message request_id=%s"
-	okText                   = "OK."
+	langUnsupportedTemplate  = "Language %s is unsupported. List of supported languages:\n" +
+		strings.Join(models.SupportedLangsList, "\n")
+	okText = "OK."
 )
 
 func prepareContext(msg *models.Message) context.Context {
@@ -167,7 +81,8 @@ type Bot struct {
 	messenger             messenger.Messenger
 	storage               storage.Storage
 	recognizer            speech.Recognizer
-	commandsRegister      map[string]*Handler
+	userCommands          map[string]*Handler
+	chatCommands          map[string]*Handler
 	wg                    sync.WaitGroup
 }
 
@@ -182,11 +97,19 @@ func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer
 		storage:               storage,
 		recognizer:            recognizer,
 	}
-	b.commandsRegister = b.createCommandRegister()
+	b.userCommands = b.createUserCommandsRegister()
+	b.chatCommands = b.createChatCommandsRegister()
 	return b
 }
 
-func (b *Bot) createCommandRegister() map[string]*Handler {
+func fillUpCommandsRegister(register map[string]*Handler) {
+	for cmdName, handler := range register {
+		register[strings.ToLower(cmdName)] = handler
+		register[strings.ToUpper(cmdName)] = handler
+	}
+}
+
+func (b *Bot) createUserCommandsRegister() map[string]*Handler {
 	register := map[string]*Handler{
 		addLabelCmd:                {b.addUserLabelHandler, "addUserLabel"},
 		removeLabelCmd:             {b.removeUserLabelHandler, "removeUserLabel"},
@@ -195,10 +118,15 @@ func (b *Bot) createCommandRegister() map[string]*Handler {
 		mentioningMethodCmd:        {b.setMentioningMethodHandler, "setMentioningMethod"},
 		deleteSentNotificationsCmd: {b.setCanDeleteNotificationsHandler, "setCanDeleteNotifications"},
 	}
-	for cmdName, handler := range register {
-		register[strings.ToLower(cmdName)] = handler
-		register[strings.ToUpper(cmdName)] = handler
+	fillUpCommandsRegister(register)
+	return register
+}
+
+func (b *Bot) createChatCommandsRegister() map[string]*Handler {
+	register := map[string]*Handler{
+		setLangCmd: {b.setChatLangHandler, "setChatLang"},
 	}
+	fillUpCommandsRegister(register)
 	return register
 }
 
@@ -252,12 +180,17 @@ func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {
 		case msg.LeftChatMember != nil:
 			handler = &Handler{b.removeChatMemberHandler, "removeChatMember"}
 		default:
-			handler = &Handler{b.regularMessageHandler, "regularMessage"}
+			cmd, _ := msg.ToCommand()
+			var isCommand bool
+			handler, isCommand = b.chatCommands[cmd]
+			if !isCommand {
+				handler = &Handler{b.regularMessageHandler, "regularMessage"}
+			}
 		}
 	} else {
 		cmd, _ := msg.ToCommand()
 		var ok bool
-		handler, ok = b.commandsRegister[cmd]
+		handler, ok = b.userCommands[cmd]
 		if !ok {
 			handler = &Handler{b.commandsListHandler, "commandsList"}
 		}
@@ -272,6 +205,7 @@ func (b *Bot) syncUserWithStorage(ctx context.Context, user *models.User, userCh
 	err := b.storage.GetOrCreateUser(ctx, user, userChatID)
 	if err != nil {
 		logger.Errorf("Cannot save user in the storage: %s", err)
+		user.PMID = userChatID
 		return false
 	}
 	return true
@@ -288,10 +222,10 @@ func (b *Bot) updateUserFromStorage(ctx context.Context, user *models.User) bool
 	return isExists
 }
 
-func (b *Bot) createChat(ctx context.Context, chat *models.Chat) bool {
+func (b *Bot) syncChatWithStorage(ctx context.Context, chat *models.Chat) bool {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("chat", chat).Info("Saving chat in the storage")
-	err := b.storage.CreateChat(ctx, chat)
+	err := b.storage.GetOrCreateChat(ctx, chat)
 	if err != nil {
 		logger.Errorf("Cannot save chat in the storage: %s", err)
 		return false
@@ -325,10 +259,14 @@ func (b *Bot) notifyUsers(ctx context.Context, users []*models.User, msg *models
 	}
 }
 
-func (b *Bot) sendErrorMsg(ctx context.Context, user *models.User) {
+func (b *Bot) sendErrorMsgToUser(ctx context.Context, user *models.User) {
+	b.sendErrorMsg(ctx, user.PMID)
+}
+
+func (b *Bot) sendErrorMsg(ctx context.Context, chatID int) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("user", user).Info("Sending error msg to the user")
-	_, err := b.messenger.SendText(ctx, user.PMID, errorText)
+	logger.WithField("chat_id", chatID).Info("Sending error msg to the chat")
+	_, err := b.messenger.SendText(ctx, chatID, errorText)
 	if err != nil {
 		logger.Errorf("Cannot send error msg: %s", err)
 		return
@@ -346,28 +284,36 @@ func (b *Bot) sendRecognitionErrorMsg(ctx context.Context, msg *models.Message) 
 	}
 }
 
-func (b *Bot) sendOKMsg(ctx context.Context, user *models.User) {
+func (b *Bot) sendOKMsgToUser(ctx context.Context, user *models.User) {
+	b.sendOKMsg(ctx, user.PMID)
+}
+
+func (b *Bot) sendOKMsg(ctx context.Context, chatID int) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("user", user).Info("Sending ok message")
-	_, err := b.messenger.SendText(ctx, user.PMID, okText)
+	logger.WithField("chat_id", chatID).Info("Sending ok message")
+	_, err := b.messenger.SendText(ctx, chatID, okText)
 	if err != nil {
-		logger.Errorf("Cannot send ok msg to the user %s", err)
+		logger.Errorf("Cannot send ok msg to the chat %s", err)
 		return
 	}
 }
 
-func (b *Bot) sendMissArgMsg(ctx context.Context, user *models.User, cmd, argName string) {
+func (b *Bot) sendMissArgMsgToUser(ctx context.Context, user *models.User, cmd, argName string) {
+	b.sendMissArgMsg(ctx, user.PMID, cmd, argName)
+}
+
+func (b *Bot) sendMissArgMsg(ctx context.Context, chatID int, cmd, argName string) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("user", user).Infof("Call cmd %s without arg %s, sending arg missed message", cmd, argName)
+	logger.WithField("chat_id", chatID).Infof("Call cmd %s without arg %s, sending arg missed message", cmd, argName)
 	text := fmt.Sprintf(cmdArgMissedTextTemplate, argName, cmd, argName)
-	_, err := b.messenger.SendText(ctx, user.PMID, text)
+	_, err := b.messenger.SendText(ctx, chatID, text)
 	if err != nil {
 		logger.Errorf("Cannot send arg missed msg: %s", err)
 		return
 	}
 }
 
-func (b *Bot) sendBadArgMsg(ctx context.Context, user *models.User, cmd, argName, argValue string, argErr error) {
+func (b *Bot) sendBadArgMsgToUser(ctx context.Context, user *models.User, cmd, argName, argValue string, argErr error) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("user", user).Infof("Call cmd %s arg %s with incorrect value=%s: %s, sending bad arg message",
 		cmd, argName, argValue, argErr)
@@ -375,6 +321,17 @@ func (b *Bot) sendBadArgMsg(ctx context.Context, user *models.User, cmd, argName
 	_, err := b.messenger.SendText(ctx, user.PMID, text)
 	if err != nil {
 		logger.Errorf("Cannot send bad arg msg: %s", err)
+		return
+	}
+}
+
+func (b *Bot) sendUnsupportedLangMsg(ctx context.Context, chatID int, lang string) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithField("chat_id", chatID).Infof("Send lang is unsupported msg, lang: %s", lang)
+	text := fmt.Sprintf(langUnsupportedTemplate, lang)
+	_, err := b.messenger.SendText(ctx, chatID, text)
+	if err != nil {
+		logger.Errorf("Cannot send unsupported lang msg: %s", err)
 		return
 	}
 }
@@ -469,16 +426,16 @@ func (b *Bot) removeUserNotifications(ctx context.Context, user *models.User, ch
 func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 	conf := config.GetInstance()
 	logger := logging.FromContextAndBase(ctx, gLogger)
-
-	if !b.createChat(ctx, msg.Chat) {
+	chat := msg.Chat
+	if !b.syncChatWithStorage(ctx, chat) {
 		return
 	}
 	sender := msg.From
-	b.addUserToChat(ctx, msg.Chat.ID, sender.ID)
+	b.addUserToChat(ctx, chat.ID, sender.ID)
 
 	isExists := b.updateUserFromStorage(ctx, sender)
 	if isExists {
-		b.removeUserNotifications(ctx, sender, msg.Chat.ID)
+		b.removeUserNotifications(ctx, sender, chat.ID)
 	}
 
 	if msg.Text == "" && msg.Voice == nil {
@@ -486,15 +443,15 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 		return
 	}
 
-	logger.WithField("chat_id", msg.Chat.ID).Info("Retrieving chat users")
-	users, err := b.storage.GetChatUsers(ctx, msg.Chat.ID)
+	logger.WithField("chat_id", chat.ID).Info("Retrieving chat users")
+	users, err := b.storage.GetChatUsers(ctx, chat.ID)
 	if err != nil {
 		logger.Errorf("Cannot get users from storage to notify: %s", err)
 		return
 	}
 	logger.WithField("users", users).Info("Users in the chat")
 
-	users = b.filterNotChatUsers(ctx, users, msg.Chat)
+	users = b.filterNotChatUsers(ctx, users, chat)
 	if !conf.NotifyYourself {
 		// for debug purposes
 		logger.WithField("yourself", sender).Info("Excluding yourself from the list of users to notify")
@@ -516,10 +473,10 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 		}
 		audioToRecognize := &speech.Audio{
 			Content: fileContent, Encoding: msg.Voice.Encoding, SampleRate: msg.Voice.SampleRate}
-		voiceLang := defaultVoiceLang
+		voiceLang := chat.Lang
 		usersLabels := models.EnumLabels(users)
 		logger.WithFields(log.Fields{"lang": voiceLang, "hints": usersLabels}).Info("Fetching words from voice message")
-		wordsInMessage, err = b.recognizer.WordsFromAudio(ctx, audioToRecognize, defaultVoiceLang, usersLabels)
+		wordsInMessage, err = b.recognizer.WordsFromAudio(ctx, audioToRecognize, voiceLang, usersLabels)
 		if err != nil {
 			logger.Warnf("Audio recognizer failed: %s", err)
 			b.sendRecognitionErrorMsg(ctx, msg)
@@ -537,7 +494,7 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 func (b *Bot) addChatMemberHandler(ctx context.Context, msg *models.Message) {
 	chat := msg.Chat
 	userID := msg.NewChatMember.ID
-	if !b.createChat(ctx, chat) {
+	if !b.syncChatWithStorage(ctx, chat) {
 		return
 	}
 
@@ -557,7 +514,18 @@ func (b *Bot) removeChatMemberHandler(ctx context.Context, msg *models.Message) 
 }
 
 func (b *Bot) createChatHandler(ctx context.Context, msg *models.Message) {
-	b.createChat(ctx, msg.Chat)
+	chat := msg.Chat
+	ok := b.syncChatWithStorage(ctx, chat)
+	if !ok {
+		b.sendErrorMsg(ctx, chat.ID)
+		return
+	}
+	greetingText := fmt.Sprintf(chatGreetingTemplate, chat.Title, chat.Lang)
+	_, err := b.messenger.SendText(ctx, chat.ID, greetingText)
+	if err != nil {
+		logger := logging.FromContextAndBase(ctx, gLogger)
+		logger.WithField("chat_id", chat.ID).Errorf("Cannot send greeting text to the chat: %s", err)
+	}
 }
 
 func (b *Bot) deleteChatHandler(ctx context.Context, msg *models.Message) {
@@ -578,12 +546,12 @@ func (b *Bot) addUserLabelHandler(ctx context.Context, msg *models.Message) {
 	label = models.ProcessWord(label)
 
 	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
-		b.sendErrorMsg(ctx, user)
+		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
 
 	if label == "" {
-		b.sendMissArgMsg(ctx, user, addLabelCmd, "new_label")
+		b.sendMissArgMsgToUser(ctx, user, addLabelCmd, "new_label")
 		return
 	}
 
@@ -591,11 +559,11 @@ func (b *Bot) addUserLabelHandler(ctx context.Context, msg *models.Message) {
 	err := b.storage.AddLabelToUser(ctx, user.ID, label)
 	if err != nil {
 		logger.Errorf("Cannot save user label: %s", err)
-		b.sendErrorMsg(ctx, user)
+		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
 
-	b.sendOKMsg(ctx, user)
+	b.sendOKMsgToUser(ctx, user)
 }
 
 func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
@@ -605,12 +573,12 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
 	label = models.ProcessWord(label)
 
 	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
-		b.sendErrorMsg(ctx, user)
+		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
 
 	if label == "" {
-		b.sendMissArgMsg(ctx, user, removeLabelCmd, "label_to_remove")
+		b.sendMissArgMsgToUser(ctx, user, removeLabelCmd, "label_to_remove")
 		return
 	}
 
@@ -618,18 +586,18 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
 	err := b.storage.RemoveLabelFromUser(ctx, user.ID, label)
 	if err != nil {
 		logger.Errorf("Removing user label from the storage failed: %s", err)
-		b.sendErrorMsg(ctx, user)
+		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
 
-	b.sendOKMsg(ctx, user)
+	b.sendOKMsgToUser(ctx, user)
 }
 
 func (b *Bot) showUserLabelsHandler(ctx context.Context, msg *models.Message) {
 	user := msg.From
 
 	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
-		b.sendErrorMsg(ctx, user)
+		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
 
@@ -641,18 +609,18 @@ func (b *Bot) setDelayHandler(ctx context.Context, msg *models.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
 	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
-		b.sendErrorMsg(ctx, user)
+		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
 
 	_, delayArg := msg.ToCommand()
 	if delayArg == "" {
-		b.sendMissArgMsg(ctx, user, setDelayCmd, "notification_delay")
+		b.sendMissArgMsgToUser(ctx, user, setDelayCmd, "notification_delay")
 		return
 	}
 	delay, err := strconv.Atoi(delayArg)
 	if err != nil {
-		b.sendBadArgMsg(ctx, user, setDelayCmd, "notification_delay", delayArg, err)
+		b.sendBadArgMsgToUser(ctx, user, setDelayCmd, "notification_delay", delayArg, err)
 		return
 	}
 
@@ -661,11 +629,11 @@ func (b *Bot) setDelayHandler(ctx context.Context, msg *models.Message) {
 	err = b.storage.SetNotificationDelay(ctx, user.ID, delay)
 	if err != nil {
 		logger.Errorf("Cannot save user notification delay in the storage: %s", err)
-		b.sendErrorMsg(ctx, user)
+		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
 
-	b.sendOKMsg(ctx, user)
+	b.sendOKMsgToUser(ctx, user)
 }
 
 func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *models.Message) {
@@ -673,20 +641,20 @@ func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *models.Messag
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
 	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
-		b.sendErrorMsg(ctx, user)
+		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
 
 	_, mentioningMethod := msg.ToCommand()
 	if mentioningMethod == "" {
-		b.sendMissArgMsg(ctx, user, mentioningMethodCmd, "mentioning_method")
+		b.sendMissArgMsgToUser(ctx, user, mentioningMethodCmd, "mentioning_method")
 		return
 	}
 	mentioningMethod = strings.ToLower(mentioningMethod)
 	ok := models.IsValidMentioningMethod(mentioningMethod)
 	if !ok {
 		errInfo := errors.Errorf("valid values: %s", models.MentioningMethodsList)
-		b.sendBadArgMsg(ctx, user, mentioningMethodCmd, "mentioning_method", mentioningMethod, errInfo)
+		b.sendBadArgMsgToUser(ctx, user, mentioningMethodCmd, "mentioning_method", mentioningMethod, errInfo)
 		return
 	}
 
@@ -695,11 +663,11 @@ func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *models.Messag
 	err := b.storage.SetMentioningMethod(ctx, user.ID, mentioningMethod)
 	if err != nil {
 		logger.Errorf("Cannot save user mentioning setting in the storage: %s", err)
-		b.sendErrorMsg(ctx, user)
+		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
 
-	b.sendOKMsg(ctx, user)
+	b.sendOKMsgToUser(ctx, user)
 }
 
 func (b *Bot) setCanDeleteNotificationsHandler(ctx context.Context, msg *models.Message) {
@@ -707,18 +675,18 @@ func (b *Bot) setCanDeleteNotificationsHandler(ctx context.Context, msg *models.
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
 	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
-		b.sendErrorMsg(ctx, user)
+		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
 
 	_, flagArgValue := msg.ToCommand()
 	if flagArgValue == "" {
-		b.sendMissArgMsg(ctx, user, deleteSentNotificationsCmd, "can_or_not")
+		b.sendMissArgMsgToUser(ctx, user, deleteSentNotificationsCmd, "can_or_not")
 		return
 	}
 	canDelete, err := strconv.ParseBool(flagArgValue)
 	if err != nil {
-		b.sendBadArgMsg(ctx, user, deleteSentNotificationsCmd, "can_or_not", flagArgValue, err)
+		b.sendBadArgMsgToUser(ctx, user, deleteSentNotificationsCmd, "can_or_not", flagArgValue, err)
 		return
 	}
 
@@ -727,7 +695,7 @@ func (b *Bot) setCanDeleteNotificationsHandler(ctx context.Context, msg *models.
 
 	if user.CanDeleteNotifications == canDelete {
 		logger.Info("User already have the save value no need to update")
-		b.sendOKMsg(ctx, user)
+		b.sendOKMsgToUser(ctx, user)
 		return
 	}
 
@@ -743,9 +711,35 @@ func (b *Bot) setCanDeleteNotificationsHandler(ctx context.Context, msg *models.
 	err = b.storage.SetCanDeleteNotifications(ctx, user.ID, canDelete)
 	if err != nil {
 		logger.Errorf("Cannot save user CanDeleteNotifications setting in the storage: %s", err)
-		b.sendErrorMsg(ctx, user)
+		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
 
-	b.sendOKMsg(ctx, user)
+	b.sendOKMsgToUser(ctx, user)
+}
+
+func (b *Bot) setChatLangHandler(ctx context.Context, msg *models.Message) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	chat := msg.Chat
+	_, lang := msg.ToCommand()
+	if lang == "" {
+		b.sendMissArgMsg(ctx, chat.ID, setLangCmd, "desired_lang")
+		return
+	}
+	lang = models.LangToSupportedFormat(lang)
+	ok := models.IsSupportedLang(lang)
+	if !ok {
+		b.sendUnsupportedLangMsg(ctx, chat.ID, lang)
+		return
+	}
+
+	logger.WithFields(log.Fields{"chat_id": chat.ID, "lang": lang}).Info("Save custom language for the chat")
+	err := b.storage.SetChatLang(ctx, chat.ID, lang)
+	if err != nil {
+		logger.Errorf("Cannot save chat language in the storage: %s", err)
+		b.sendErrorMsg(ctx, chat.ID)
+		return
+	}
+
+	b.sendOKMsg(ctx, chat.ID)
 }

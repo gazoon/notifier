@@ -18,18 +18,20 @@ var (
 )
 
 type Storage interface {
-	CreateChat(ctx context.Context, chat *models.Chat) error
+	GetOrCreateChat(ctx context.Context, chat *models.Chat) error
+	SetChatLang(ctx context.Context, chatID int, lang string) error
 	DeleteChat(ctx context.Context, chatID int) error
 	RemoveUserFromChat(ctx context.Context, chatID, userID int) error
 	AddUserToChat(ctx context.Context, chatID, userID int) error
+	GetChatUsers(ctx context.Context, chatID int) ([]*models.User, error)
+
 	GetOrCreateUser(ctx context.Context, user *models.User, pmid int) error
 	GetUser(ctx context.Context, user *models.User) (bool, error)
 	AddLabelToUser(ctx context.Context, userID int, label string) error
+	RemoveLabelFromUser(ctx context.Context, userID int, label string) error
 	SetNotificationDelay(ctx context.Context, userID, delay int) error
 	SetMentioningMethod(ctx context.Context, userID int, method string) error
 	SetCanDeleteNotifications(ctx context.Context, userID int, canDelete bool) error
-	RemoveLabelFromUser(ctx context.Context, userID int, label string) error
-	GetChatUsers(ctx context.Context, chatID int) ([]*models.User, error)
 }
 
 type NeoStorage struct {
@@ -61,10 +63,20 @@ func (ns *NeoStorage) SetCanDeleteNotifications(ctx context.Context, userID int,
 	return ns.client.ExecRetry(ctx, `MATCH (u: User {uid: {user_id}}) SET u.delete_notifications={can_delete}`, params)
 }
 
-func (ns *NeoStorage) CreateChat(ctx context.Context, chat *models.Chat) error {
-	params := map[string]interface{}{"chat_id": chat.ID, "title": chat.Title}
-	err := ns.client.ExecRetry(ctx, `MERGE (c: Chat {cid: {chat_id}}) ON CREATE SET c.title={title}`, params)
-	return err
+func (ns *NeoStorage) GetOrCreateChat(ctx context.Context, chat *models.Chat) error {
+	params := map[string]interface{}{"chat_id": chat.ID, "title": chat.Title, "lang": models.DefaultLang}
+	row, err := ns.client.QueryOneRetry(ctx,
+		`MERGE (c: Chat {cid: {chat_id}}) ON CREATE SET c.title={title},c.lang={lang} return c`, params)
+	if err != nil {
+		return err
+	}
+	err = rowToChat(row, chat)
+	return errors.Wrap(err, "chat deserialization failed")
+}
+
+func (ns *NeoStorage) SetChatLang(ctx context.Context, chatID int,lang string) error {
+	params := map[string]interface{}{"chat_id": chatID, "lang": lang}
+	return ns.client.ExecRetry(ctx, `MATCH (c: Chat {cid: {chat_id}}) SET c.lang={lang}`, params)
 }
 
 func (ns *NeoStorage) DeleteChat(ctx context.Context, chatID int) error {
@@ -176,6 +188,17 @@ func (ns *NeoStorage) PrepareIndexes() error {
 	return nil
 }
 
+func rowToGraphNode(row []interface{}) (*graph.Node, error) {
+	if len(row) != 1 {
+		return nil, errors.Errorf("expected row length is 1, row = %v", row)
+	}
+	node, ok := row[0].(graph.Node)
+	if !ok {
+		return nil, errors.Errorf("expected graph Node row element, got %v", row[0])
+	}
+	return &node, nil
+}
+
 func rowsToUsers(rows [][]interface{}) ([]*models.User, error) {
 	var users []*models.User
 	for _, row := range rows {
@@ -190,13 +213,11 @@ func rowsToUsers(rows [][]interface{}) ([]*models.User, error) {
 }
 
 func rowToUser(row []interface{}, user *models.User) error {
-	if len(row) != 1 {
-		return errors.Errorf("expected row length is 1, row = %v", row)
+	node, err := rowToGraphNode(row)
+	if err != nil {
+		return err
 	}
-	node, ok := row[0].(graph.Node)
-	if !ok {
-		return errors.Errorf("expected graph Node row element, got %v", row[0])
-	}
+
 	data := node.Properties
 	userID, isUserIdOk := data["uid"].(int64)
 	PMID, isPmIdOk := data["pmid"].(int64)
@@ -230,5 +251,27 @@ func rowToUser(row []interface{}, user *models.User) error {
 	user.MentioningMethod = mentioningMethod
 	user.Labels = labels
 	user.CanDeleteNotifications = deleteNotifications
+	return nil
+}
+
+func rowToChat(row []interface{}, chat *models.Chat) error {
+	node, err := rowToGraphNode(row)
+	if err != nil {
+		return err
+	}
+
+	data := node.Properties
+	chatID, isChatIdOk := data["cid"].(int64)
+	title, isTitleOk := data["title"].(string)
+	lang, isLangOk := data["lang"].(string)
+	if !isChatIdOk || !isTitleOk || !isLangOk {
+		return errors.Errorf(
+			"expected cid-int64,title-string,lang-string chat properties, got %v %v %v",
+			reflect.TypeOf(data["cid"]), reflect.TypeOf(data["title"]), reflect.TypeOf(data["lang"]))
+	}
+
+	chat.ID = int(chatID)
+	chat.Title = title
+	chat.Lang = lang
 	return nil
 }
