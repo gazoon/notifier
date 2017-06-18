@@ -20,6 +20,7 @@ import (
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
+	"unicode/utf8"
 )
 
 const (
@@ -50,13 +51,17 @@ var (
 		"Your current language for voice messages is %s. You always can change it, to do this type:\n" +
 		setLangCmd + " {desired_language}"
 
-	notificationTextTemplate = "%s, you've been mentioned in the %s chat:"
-	errorText                = "An internal bot error occurred."
-	noLabelsText             = "You don't have any labels yet."
-	cmdArgMissedTextTemplate = "You didn't provide a value for {%s} argument\nEnter %s {%s}"
-	cmdBadArgTextTemplate    = "You provided a bad value for {%s} argument: %s."
-	recognitionErrTemplate   = "Cannot recognize voice message request_id=%s"
-	langUnsupportedTemplate  = "Language %s is unsupported. List of supported languages:\n" +
+	notificationTextMentioningTemplate  = "You've been mentioned in the %s chat:"
+	notificationVoiceMentioningTemplate = "You've been mentioned in the %s chat (%s):"
+	noSwearWords                        = "✅ There are no swear words"
+	swearWordFoundTemplate              = "❌ Swear word detected -> %s"
+	swearWordsDetectionFailed           = "Cannot detect the presence of swear words."
+	errorText                           = "An internal bot error occurred."
+	noLabelsText                        = "You don't have any labels yet."
+	cmdArgMissedTextTemplate            = "You didn't provide a value for {%s} argument\nEnter %s {%s}"
+	cmdBadArgTextTemplate               = "You provided a bad value for {%s} argument: %s."
+	recognitionErrTemplate              = "Cannot recognize voice message request_id=%s"
+	langUnsupportedTemplate             = "Language %s is unsupported. List of supported languages:\n" +
 		strings.Join(models.SupportedLangsList, "\n")
 	okText = "OK."
 )
@@ -244,10 +249,9 @@ func (b *Bot) addUserToChat(ctx context.Context, chatID, userID int) bool {
 	return true
 }
 
-func (b *Bot) notifyUsers(ctx context.Context, users []*models.User, msg *models.Message) {
+func (b *Bot) notifyUsers(ctx context.Context, users []*models.User, msg *models.Message, notificationText string) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	for _, user := range users {
-		notificationText := fmt.Sprintf(notificationTextTemplate, user.Name, msg.Chat.Title)
 		notification := models.NewNotification(user, msg.ID, msg.Chat.ID, notificationText,
 			msg.RequestID)
 		logger.WithField("notification", notification).Info("Put notification to the queue")
@@ -280,6 +284,17 @@ func (b *Bot) sendRecognitionErrorMsg(ctx context.Context, msg *models.Message) 
 	_, err := b.messenger.SendReply(ctx, msg.Chat.ID, msg.ID, errorText)
 	if err != nil {
 		logger.Errorf("Cannot send recognition error msg: %s", err)
+		return
+	}
+}
+
+func (b *Bot) sendSwearDetectionReport(ctx context.Context, msg *models.Message, result string) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "msg_id": msg.ID, "result": result}).
+		Info("Sending swear report to the chat")
+	_, err := b.messenger.SendReply(ctx, msg.Chat.ID, msg.ID, result)
+	if err != nil {
+		logger.Errorf("Cannot send swear report msg: %s", err)
 		return
 	}
 }
@@ -437,8 +452,14 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 	if isExists {
 		b.removeUserNotifications(ctx, sender, chat.ID)
 	}
-
-	if msg.Text == "" && msg.Voice == nil {
+	var isVoiceMessage bool
+	if msg.Text != "" {
+		logger.Info("Processing text message in the chat")
+		isVoiceMessage = false
+	} else if msg.Voice != nil {
+		logger.Info("Processing voice message in the chat")
+		isVoiceMessage = true
+	} else {
 		logger.Info("Message without text or voice, skipping notification part")
 		return
 	}
@@ -458,12 +479,7 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 		users = models.ExcludeUserFromList(users, sender)
 	}
 	var wordsInMessage []string
-	if msg.Text != "" {
-		logger.WithField("text", msg.Text).Info("Text mentioning, leave users who can be mentioned by text")
-		users = models.FilterByMentioningMethod(users, models.TextMentioningMethod)
-		wordsInMessage = speech.UniqueWordsFromText(msg.Text)
-
-	} else {
+	if isVoiceMessage {
 		logger.WithField("voice", msg.Voice).Info("Voice mentioning, leave users who can be mentioned by voice")
 		users = models.FilterByMentioningMethod(users, models.VoiceMentioningMethod)
 		fileContent, err := b.messenger.DownloadFile(ctx, msg.Voice.ID)
@@ -475,20 +491,79 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 			Content: fileContent, Encoding: msg.Voice.Encoding, SampleRate: msg.Voice.SampleRate}
 		voiceLang := chat.Lang
 		usersLabels := models.EnumLabels(users)
-		logger.WithFields(log.Fields{"lang": voiceLang, "hints": usersLabels}).Info("Fetching words from voice message")
-		wordsInMessage, err = b.recognizer.WordsFromAudio(ctx, audioToRecognize, voiceLang, usersLabels)
+		customSwearWords, err := b.storage.GetChatEnabledWords(ctx, chat.ID)
+		if err != nil {
+			logger.WithField("chat_id", chat.ID).Errorf("Cannot get list of chat swear words: %s", err)
+			customSwearWords = []string{}
+		}
+		logger.WithFields(log.Fields{"lang": voiceLang, "user_labels": usersLabels, "swear_words": customSwearWords}).
+			Info("Fetching words from voice message")
+		wordsInMessage, err = b.recognizer.WordsFromAudio(ctx, audioToRecognize, voiceLang, usersLabels, customSwearWords)
 		if err != nil {
 			logger.Warnf("Audio recognizer failed: %s", err)
 			b.sendRecognitionErrorMsg(ctx, msg)
 			return
 		}
+	} else {
+		logger.WithField("text", msg.Text).Info("Text mentioning, leave users who can be mentioned by text")
+		users = models.FilterByMentioningMethod(users, models.TextMentioningMethod)
+		wordsInMessage = speech.UniqueWordsFromText(msg.Text)
 	}
 	wordsInMessage = models.ProcessWords(wordsInMessage)
-	logger.WithFields(log.Fields{"users": users, "words": wordsInMessage}).Info("Search mentioned users to notify")
+	logger.WithField("words", wordsInMessage).Info("Words in message after processing")
+	var notificationText string
+	if isVoiceMessage {
+		var swearDetectionReport string
+		logger.Info("Detect are there any swear words in the message")
+		swearWord, err := b.detectSwearWord(ctx, chat.ID, wordsInMessage)
+		if err != nil {
+			logger.Errorf("Cannot detect swear word: %s", err)
+			swearDetectionReport = swearWordsDetectionFailed
+		} else if swearWord == "" {
+			logger.Info("No swear word was found")
+			swearDetectionReport = noSwearWords
+		} else {
+			logger.WithField("swear_word", swearWord).Info("Swear word was detected")
+			swearDetectionReport = fmt.Sprintf(swearWordFoundTemplate, swearWord)
+		}
+		notificationText = fmt.Sprintf(notificationVoiceMentioningTemplate, chat.Title, swearDetectionReport)
+		b.sendSwearDetectionReport(ctx, msg, swearDetectionReport)
+	} else {
+		notificationText = fmt.Sprintf(notificationTextMentioningTemplate, chat.Title)
+	}
+	logger.WithField("users", users).Info("Search mentioned users to notify")
 	users = models.GetMentionedUsers(users, wordsInMessage)
-
 	logger.WithField("users", users).Info("Users to notify")
-	b.notifyUsers(ctx, users, msg)
+	b.notifyUsers(ctx, users, msg, notificationText)
+}
+
+func (b *Bot) detectSwearWord(ctx context.Context, chatID int, words []string) (string, error) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	wordsWithPrefixes := words
+	prefixesToOriginal := map[string]string{}
+	for _, word := range words {
+		prefixesToOriginal[word] = word
+		wordLen := utf8.RuneCountInString(word)
+		wordRunes := []rune(word)
+		for i := 1; i < wordLen; i++ {
+			prefix := string(wordRunes[:wordLen-i])
+			prefixesToOriginal[prefix] = word
+			wordsWithPrefixes = append(wordsWithPrefixes, prefix)
+		}
+	}
+	logger.WithField("words", wordsWithPrefixes).Info("Filter swear words for particular chat")
+	swearWords, err := b.storage.FilterSwearWordsForChat(ctx, chatID, wordsWithPrefixes)
+	if err != nil {
+		return "", errors.Wrap(err, "storage filter failed")
+	}
+	logger.WithField("swear_words", swearWords).Info("Swear words for chat")
+	for _, word := range swearWords {
+		originalWord, ok := prefixesToOriginal[word]
+		if ok {
+			return originalWord, nil
+		}
+	}
+	return "", nil
 }
 
 func (b *Bot) addChatMemberHandler(ctx context.Context, msg *models.Message) {

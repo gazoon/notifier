@@ -9,6 +9,7 @@ import (
 	"reflect"
 
 	"database/sql"
+
 	"github.com/johnnadratowski/golang-neo4j-bolt-driver/structures/graph"
 	"github.com/pkg/errors"
 )
@@ -24,6 +25,11 @@ type Storage interface {
 	RemoveUserFromChat(ctx context.Context, chatID, userID int) error
 	AddUserToChat(ctx context.Context, chatID, userID int) error
 	GetChatUsers(ctx context.Context, chatID int) ([]*models.User, error)
+
+	EnableChatWord(ctx context.Context, chatID int, word string) error
+	DisableChatWord(ctx context.Context, chatID int, word string) error
+	FilterSwearWordsForChat(ctx context.Context, chatID int, words []string) ([]string, error)
+	GetChatEnabledWords(ctx context.Context, chatID int) ([]string, error)
 
 	GetOrCreateUser(ctx context.Context, user *models.User, pmid int) error
 	GetUser(ctx context.Context, user *models.User) (bool, error)
@@ -50,23 +56,23 @@ func NewNeoStorage(host string, port int, user, password string, timeout, poolSi
 
 func (ns *NeoStorage) SetNotificationDelay(ctx context.Context, userID, delay int) error {
 	params := map[string]interface{}{"user_id": userID, "delay": delay}
-	return ns.client.ExecRetry(ctx, `MATCH (u: User {uid: {user_id}}) SET u.notification_delay={delay}`, params)
+	return ns.client.ExecRetry(ctx, `MATCH (u:User {uid: {user_id}}) SET u.notification_delay={delay}`, params)
 }
 
 func (ns *NeoStorage) SetMentioningMethod(ctx context.Context, userID int, method string) error {
 	params := map[string]interface{}{"user_id": userID, "mentioning": method}
-	return ns.client.ExecRetry(ctx, `MATCH (u: User {uid: {user_id}}) SET u.mentioning={mentioning}`, params)
+	return ns.client.ExecRetry(ctx, `MATCH (u:User {uid: {user_id}}) SET u.mentioning={mentioning}`, params)
 }
 
 func (ns *NeoStorage) SetCanDeleteNotifications(ctx context.Context, userID int, canDelete bool) error {
 	params := map[string]interface{}{"user_id": userID, "can_delete": canDelete}
-	return ns.client.ExecRetry(ctx, `MATCH (u: User {uid: {user_id}}) SET u.delete_notifications={can_delete}`, params)
+	return ns.client.ExecRetry(ctx, `MATCH (u:User {uid: {user_id}}) SET u.delete_notifications={can_delete}`, params)
 }
 
 func (ns *NeoStorage) GetOrCreateChat(ctx context.Context, chat *models.Chat) error {
 	params := map[string]interface{}{"chat_id": chat.ID, "title": chat.Title, "lang": models.DefaultLang}
 	row, err := ns.client.QueryOneRetry(ctx,
-		`MERGE (c: Chat {cid: {chat_id}}) ON CREATE SET c.title={title},c.lang={lang} return c`, params)
+		`MERGE (c:Chat {cid: {chat_id}}) ON CREATE SET c.title={title},c.lang={lang} RETURN c`, params)
 	if err != nil {
 		return err
 	}
@@ -74,28 +80,28 @@ func (ns *NeoStorage) GetOrCreateChat(ctx context.Context, chat *models.Chat) er
 	return errors.Wrap(err, "chat deserialization failed")
 }
 
-func (ns *NeoStorage) SetChatLang(ctx context.Context, chatID int,lang string) error {
+func (ns *NeoStorage) SetChatLang(ctx context.Context, chatID int, lang string) error {
 	params := map[string]interface{}{"chat_id": chatID, "lang": lang}
-	return ns.client.ExecRetry(ctx, `MATCH (c: Chat {cid: {chat_id}}) SET c.lang={lang}`, params)
+	return ns.client.ExecRetry(ctx, `MATCH (c:Chat {cid: {chat_id}}) SET c.lang={lang}`, params)
 }
 
 func (ns *NeoStorage) DeleteChat(ctx context.Context, chatID int) error {
 	params := map[string]interface{}{"chat_id": chatID}
-	err := ns.client.ExecRetry(ctx, `MATCH (c: Chat) WHERE c.cid={chat_id} DETACH DELETE c`, params)
+	err := ns.client.ExecRetry(ctx, `MATCH (c:Chat) WHERE c.cid={chat_id} DETACH DELETE c`, params)
 	return err
 }
 
 func (ns *NeoStorage) RemoveUserFromChat(ctx context.Context, chatID, userID int) error {
 	params := map[string]interface{}{"chat_id": chatID, "user_id": userID}
 	err := ns.client.ExecRetry(ctx,
-		`MATCH(u:User) -[m:Member]-> (c: Chat) WHERE u.uid={user_id} AND c.cid={chat_id} DELETE m`, params)
+		`MATCH(u:User) -[m:Member]-> (c:Chat) WHERE u.uid={user_id} AND c.cid={chat_id} DELETE m`, params)
 	return err
 }
 
 func (ns *NeoStorage) AddUserToChat(ctx context.Context, chatID, userID int) error {
 	params := map[string]interface{}{"chat_id": chatID, "user_id": userID}
 	err := ns.client.ExecRetry(ctx,
-		`MATCH(u:User), (c: Chat) WHERE u.uid={user_id} AND c.cid={chat_id} MERGE (u)-[:Member]->(c)`, params)
+		`MATCH(u:User), (c:Chat) WHERE u.uid={user_id} AND c.cid={chat_id} MERGE (u)-[:Member]->(c)`, params)
 	return err
 }
 
@@ -115,9 +121,9 @@ func (ns *NeoStorage) GetOrCreateUser(ctx context.Context, user *models.User, pm
 		"can_delete": models.DefaultDeleteNotificationsFlag,
 	}
 	row, err := ns.client.QueryOneRetry(ctx,
-		`MERGE (u: User {uid: {user_id}}) ON CREATE SET
+		`MERGE (u:User {uid: {user_id}}) ON CREATE SET
 		u.name={name},u.pmid={pmid},u.lbls={labels},u.notification_delay={delay},u.mentioning={mentioning},
-		u.delete_notifications={can_delete} return u`,
+		u.delete_notifications={can_delete} RETURN u`,
 		params)
 	if err != nil {
 		return err
@@ -128,7 +134,7 @@ func (ns *NeoStorage) GetOrCreateUser(ctx context.Context, user *models.User, pm
 
 func (ns *NeoStorage) GetUser(ctx context.Context, user *models.User) (bool, error) {
 	params := map[string]interface{}{"user_id": user.ID}
-	row, err := ns.client.QueryOneRetry(ctx, `MATCH (u: User {uid: {user_id}}) return u`, params)
+	row, err := ns.client.QueryOneRetry(ctx, `MATCH (u:User {uid: {user_id}}) RETURN u`, params)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -145,21 +151,21 @@ func (ns *NeoStorage) GetUser(ctx context.Context, user *models.User) (bool, err
 func (ns *NeoStorage) AddLabelToUser(ctx context.Context, userID int, label string) error {
 	params := map[string]interface{}{"user_id": userID, "label": label}
 	err := ns.client.ExecRetry(ctx,
-		`MATCH (u: User {uid: {user_id}}) WHERE not {label} in u.lbls SET u.lbls=u.lbls + {label}`, params)
+		`MATCH (u:User {uid: {user_id}}) WHERE not {label} in u.lbls SET u.lbls=u.lbls + {label}`, params)
 	return err
 }
 
 func (ns *NeoStorage) RemoveLabelFromUser(ctx context.Context, userID int, label string) error {
 	params := map[string]interface{}{"user_id": userID, "label": label}
 	err := ns.client.ExecRetry(ctx,
-		`MATCH (u: User {uid: {user_id}}) SET u.lbls=FILTER (lbl IN u.lbls WHERE lbl<>{label})`, params)
+		`MATCH (u:User {uid: {user_id}}) SET u.lbls=FILTER (lbl IN u.lbls WHERE lbl<>{label})`, params)
 	return err
 }
 
 func (ns *NeoStorage) GetChatUsers(ctx context.Context, chatID int) ([]*models.User, error) {
 	params := map[string]interface{}{"chat_id": chatID}
 	rows, err := ns.client.Query(ctx,
-		`MATCH (u: User)-[:Member]->(c:Chat {cid:{chat_id}}) RETURN u`,
+		`MATCH (u:User)-[:Member]->(c:Chat {cid:{chat_id}}) RETURN u`,
 		params)
 	if err != nil {
 		return nil, err
@@ -169,6 +175,55 @@ func (ns *NeoStorage) GetChatUsers(ctx context.Context, chatID int) ([]*models.U
 		return nil, errors.Wrap(err, "cannot convert rows to list of User models")
 	}
 	return users, nil
+}
+
+func (ns *NeoStorage) CreateSwearWord(ctx context.Context, word string) error {
+	params := map[string]interface{}{"word": word}
+	err := ns.client.ExecRetry(ctx, `MERGE (w:SwearWord {word: {word}})`, params)
+	return err
+}
+
+func (ns *NeoStorage) EnableChatWord(ctx context.Context, chatID int, word string) error {
+	params := map[string]interface{}{"chat_id": chatID, "word": word}
+	err := ns.client.ExecRetry(ctx,
+		`MERGE (w:SwearWord {word: {word}}) WITH w MATCH (c:Chat {cid: {chat_id}})
+		MERGE (c)-[:WordEnabled]->(w) WITH c,w
+		MATCH (c)-[wd:WordDisabled]->(w) DELETE wd`, params)
+	return err
+}
+
+func (ns *NeoStorage) DisableChatWord(ctx context.Context, chatID int, word string) error {
+	params := map[string]interface{}{"chat_id": chatID, "word": word}
+	err := ns.client.ExecRetry(ctx,
+		`MATCH (w:SwearWord {word: {word}}) MATCH (c:Chat {cid: {chat_id}})
+		MERGE (c)-[:WordDisabled]->(w) WITH c,w
+		MATCH (c)-[we:WordEnabled]->(w) DELETE we`, params)
+	return err
+}
+
+func (ns *NeoStorage) FilterSwearWordsForChat(ctx context.Context, chatID int, words []string) ([]string, error) {
+	wordsArg := make([]interface{}, len(words))
+	for i := range words {
+		wordsArg[i] = words[i]
+	}
+	params := map[string]interface{}{"chat_id": chatID, "words": wordsArg}
+	rows, err := ns.client.QueryRetry(ctx,
+		`MATCH (c:Chat {cid: {chat_id}}) MATCH (w:SwearWord)
+		WHERE w.word IN {words} AND NOT (c)-[:WordDisabled]->(w) RETURN w.word`, params)
+	if err != nil {
+		return nil, err
+	}
+	return rowsToStrings(rows)
+}
+
+func (ns *NeoStorage) GetChatEnabledWords(ctx context.Context, chatID int) ([]string, error) {
+	params := map[string]interface{}{"chat_id": chatID}
+	rows, err := ns.client.QueryRetry(ctx,
+		`MATCH (c:Chat {cid: {chat_id}})-[:WordEnabled]->(w:SwearWord) RETURN w.word`, params)
+	if err != nil {
+		return nil, err
+	}
+	return rowsToStrings(rows)
 }
 
 func (ns *NeoStorage) PrepareIndexes() error {
@@ -185,7 +240,27 @@ func (ns *NeoStorage) PrepareIndexes() error {
 		return errors.Wrap(err, "Chat cid index")
 	}
 
+	err = ns.client.Exec(ctx, `CREATE CONSTRAINT ON (w:SwearWord) ASSERT w.word IS UNIQUE`, nil)
+	if err != nil {
+		return errors.Wrap(err, "SwearWord word index")
+	}
+
 	return nil
+}
+
+func rowsToStrings(rows [][]interface{}) ([]string, error) {
+	values := make([]string, len(rows))
+	for i, row := range rows {
+		if len(row) != 1 {
+			return nil, errors.Errorf("expected row length is 1, row = %v", row)
+		}
+		value, ok := row[0].(string)
+		if !ok {
+			return nil, errors.Errorf("expected string row element, got %v", row[0])
+		}
+		values[i] = value
+	}
+	return values, nil
 }
 
 func rowToGraphNode(row []interface{}) (*graph.Node, error) {

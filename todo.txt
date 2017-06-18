@@ -1,2 +1,4 @@
 23. add neo timeouts
 25. http client?
+26. add/delete per chat swear words
+27. import common russian swear words

@@ -31,8 +31,8 @@ type Audio struct {
 }
 
 type Recognizer interface {
-	TextFromAudio(ctx context.Context, file *Audio, lang string, hints []string) (string, error)
-	WordsFromAudio(ctx context.Context, file *Audio, lang string, hints []string) ([]string, error)
+	TextFromAudio(ctx context.Context, file *Audio, lang string, speechContexts ...[]string) (string, error)
+	WordsFromAudio(ctx context.Context, file *Audio, lang string, speechContexts ...[]string) ([]string, error)
 }
 
 type GoogleRecognizer struct {
@@ -45,26 +45,26 @@ func NewGoogleRecognizer(apiKey string, timeout int) *GoogleRecognizer {
 	return &GoogleRecognizer{httpClient: client, apiKey: apiKey}
 }
 
-func (gr *GoogleRecognizer) TextFromAudio(ctx context.Context, file *Audio, lang string, hints []string) (string, error) {
-	alternatives, err := gr.sendAudio(ctx, file, lang, hints, 1)
+func (gr *GoogleRecognizer) TextFromAudio(ctx context.Context, file *Audio, lang string, speechContexts ...[]string) (string, error) {
+	alternatives, err := gr.sendAudio(ctx, file, lang, 1, speechContexts...)
 	if err != nil {
 		return "", err
 	}
 	return alternatives[0], nil
 }
 
-func (gr *GoogleRecognizer) WordsFromAudio(ctx context.Context, file *Audio, lang string, hints []string) (
+func (gr *GoogleRecognizer) WordsFromAudio(ctx context.Context, file *Audio, lang string, speechContexts ...[]string) (
 	[]string, error) {
 
-	alternatives, err := gr.sendAudio(ctx, file, lang, hints, recognitionMaxAlternatives)
+	alternatives, err := gr.sendAudio(ctx, file, lang, recognitionMaxAlternatives, speechContexts...)
 	if err != nil {
 		return nil, err
 	}
 	return uniqueWordsFromTexts(alternatives), nil
 }
 
-func (gr *GoogleRecognizer) sendAudio(ctx context.Context, file *Audio, lang string, hints []string, alternativesNum int) (
-	[]string, error) {
+func (gr *GoogleRecognizer) sendAudio(ctx context.Context, file *Audio, lang string, alternativesNum int,
+	speechContexts ...[]string) ([]string, error) {
 
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	request := map[string]map[string]interface{}{
@@ -78,9 +78,14 @@ func (gr *GoogleRecognizer) sendAudio(ctx context.Context, file *Audio, lang str
 			"content": base64.StdEncoding.EncodeToString(file.Content),
 		},
 	}
+	var hints []string
+	for _, speechContext := range speechContexts {
+		hints = append(hints, speechContext...)
+	}
 	if len(hints) != 0 {
 		request["config"]["speechContexts"] = []map[string][]string{{"phrases": hints}}
 	}
+
 	requestStr, err := json.Marshal(request)
 	if err != nil {
 		return nil, errors.Wrap(err, "request serialization failed")
