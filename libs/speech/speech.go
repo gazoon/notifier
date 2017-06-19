@@ -56,7 +56,7 @@ func (gr *GoogleRecognizer) TextFromAudio(ctx context.Context, file *Audio, lang
 func (gr *GoogleRecognizer) WordsFromAudio(ctx context.Context, file *Audio, lang string, speechContexts ...[]string) (
 	[]string, error) {
 
-	alternatives, err := gr.sendAudio(ctx, file, lang, recognitionMaxAlternatives, speechContexts...)
+	alternatives, err := gr.sendAudio(ctx, file, lang, 1, speechContexts...)
 	if err != nil {
 		return nil, err
 	}

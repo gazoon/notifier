@@ -52,7 +52,7 @@ var (
 		setLangCmd + " {desired_language}"
 
 	notificationTextMentioningTemplate  = "You've been mentioned in the %s chat:"
-	notificationVoiceMentioningTemplate = "You've been mentioned in the %s chat (%s):"
+	notificationVoiceMentioningTemplate = "You've been mentioned in the %s chat, %s:"
 	noSwearWords                        = "✅ There are no swear words"
 	swearWordFoundTemplate              = "❌ Swear word detected -> %s"
 	swearWordsDetectionFailed           = "Cannot detect the presence of swear words."

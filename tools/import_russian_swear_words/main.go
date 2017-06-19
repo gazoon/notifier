@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 
+	"notifier/libs/models"
+
 	"github.com/pkg/errors"
 )
 
@@ -28,11 +30,11 @@ func getSiteContent() (string, error) {
 }
 
 func retrieveHighlightedParts(content string) []string {
-	re := regexp.MustCompile("<p><b>([^<>/]+)</b>")
+	re := regexp.MustCompile("<p><b>([^<>/()]+)( \\([^()]+\\))?</b>")
 	matchedPairs := re.FindAllStringSubmatch(content, -1)
 	var highlighted []string
 	for _, pair := range matchedPairs {
-		if len(pair) != 2 {
+		if len(pair) < 2 {
 			gLogger.Warnf("tags matched, but without inner part: %s", pair)
 			continue
 		}
@@ -70,6 +72,7 @@ func saveToStorage(db *storage.NeoStorage, words []string) int {
 	ctx := context.Background()
 	var count int
 	for _, word := range words {
+		word = models.ProcessWord(word)
 		logger := gLogger.WithField("swear_word", word)
 		logger.Debug("Save new word to the storage")
 		err := db.CreateSwearWord(ctx, word)
