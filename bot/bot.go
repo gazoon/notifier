@@ -18,9 +18,10 @@ import (
 
 	"notifier/libs/notifications_registry"
 
+	"unicode/utf8"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
-	"unicode/utf8"
 )
 
 const (
@@ -29,24 +30,35 @@ const (
 	showLabelsCmd              = "showLabels"
 	setDelayCmd                = "notifDelay"
 	mentioningMethodCmd        = "mentioningMethod"
-	setLangCmd                 = "setLanguage"
 	deleteSentNotificationsCmd = "deleteSentNotifications"
+
+	setLangCmd          = "setLanguage"
+	enableSwearWordCmd  = "addSwearWord"
+	disableSwearWordCmd = "removeSwearWord"
+	helpCmd             = "help"
 )
 
 var (
 	gLogger = logging.WithPackage("bot")
 
-	commandsText = fmt.Sprintf("Hi! I can do following for you:\n\n"+
+	helpInPrivateChat = fmt.Sprintf("Hi! I can do following for you:\n\n"+
 		"%s - Add new label for further notifications.\n\n"+
 		"%s - Delete label with provided name.\n\n"+
 		"%s - Show all your labels.\n\n"+
 		"%s - Change the time, in seconds, after which I will send notification, default - 10 sec, 0 means notify immediately.\n\n"+
 		"%s - Change the method, by which people can mention you, e.g: %s, %s, %s or %s.\n\n"+
 		"%s - true or false - can I delete already sent notifications in case you showed some activity in the chat.\n\n"+
-		"%s - language of voice messages. This command works only in group chats.",
+		"%s - language of voice messages. This command works only in group chats.\n"+
+		"%s - add swear word to the bot vocabulary. This command works only in group chats.\n"+
+		"%s - stop considering the word as swear. This command works only in group chats.",
 		addLabelCmd, removeLabelCmd, showLabelsCmd, setDelayCmd, mentioningMethodCmd,
 		models.TextMentioningMethod, models.VoiceMentioningMethod, models.AllMentioningMethod, models.NoneMentioningMethod,
-		deleteSentNotificationsCmd, setLangCmd)
+		deleteSentNotificationsCmd, setLangCmd, enableSwearWordCmd, disableSwearWordCmd)
+	helpInGroupChat = fmt.Sprintf("Hi! I can do following for you:\n\n"+
+		"%s - change language of voice messages.\n\n"+
+		"%s - add swear word to my vocabulary.\n\n"+
+		"%s - stop considering the word as swear.",
+		setLangCmd, enableSwearWordCmd, disableSwearWordCmd)
 	chatGreetingTemplate = "Hi, %s! I will notify users in this chat if they was mentioned in the messages.\n" +
 		"Your current language for voice messages is %s. You always can change it, to do this type:\n" +
 		setLangCmd + " {desired_language}"
@@ -129,7 +141,10 @@ func (b *Bot) createUserCommandsRegister() map[string]*Handler {
 
 func (b *Bot) createChatCommandsRegister() map[string]*Handler {
 	register := map[string]*Handler{
-		setLangCmd: {b.setChatLangHandler, "setChatLang"},
+		setLangCmd:          {b.setChatLangHandler, "setChatLang"},
+		enableSwearWordCmd:  {b.enableSwearWordHandler, "enableSwearWord"},
+		disableSwearWordCmd: {b.disableSwearWordHandler, "disableSwearWord"},
+		helpCmd:             {b.helpInChatHandler, "helpInGroupChat"},
 	}
 	fillUpCommandsRegister(register)
 	return register
@@ -399,7 +414,7 @@ func (b *Bot) commandsListHandler(ctx context.Context, msg *models.Message) {
 	b.syncUserWithStorage(ctx, user, msg.Chat.ID)
 
 	logger.WithField("user_id", user.ID).Info("Sending the list of commands")
-	_, err := b.messenger.SendText(ctx, user.PMID, commandsText)
+	_, err := b.messenger.SendText(ctx, user.PMID, helpInPrivateChat)
 	if err != nil {
 		logger.Errorf("cannot send commands to the user: %s", err)
 	}
@@ -491,14 +506,24 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 			Content: fileContent, Encoding: msg.Voice.Encoding, SampleRate: msg.Voice.SampleRate}
 		voiceLang := chat.Lang
 		usersLabels := models.EnumLabels(users)
-		customSwearWords, err := b.storage.GetChatEnabledWords(ctx, chat.ID)
+		enabledChatWords, err := b.storage.GetChatEnabledWords(ctx, chat.ID)
 		if err != nil {
-			logger.WithField("chat_id", chat.ID).Errorf("Cannot get list of chat swear words: %s", err)
-			customSwearWords = []string{}
+			logger.WithField("chat_id", chat.ID).Errorf("Cannot get list of swear words enabled in chat: %s", err)
+			enabledChatWords = []string{}
 		}
-		logger.WithFields(log.Fields{"lang": voiceLang, "user_labels": usersLabels, "swear_words": customSwearWords}).
+		disabledChatWords, err := b.storage.GetChatDisabledWords(ctx, chat.ID)
+		if err != nil {
+			logger.WithField("chat_id", chat.ID).Errorf("Cannot get list of chat swear words disabled in chat: %s", err)
+			disabledChatWords = []string{}
+		}
+		logger.WithFields(log.Fields{
+			"lang":                 voiceLang,
+			"user_labels":          usersLabels,
+			"enabled_swear_words":  enabledChatWords,
+			"disabled_swear_words": disabledChatWords}).
 			Info("Fetching words from voice message")
-		wordsInMessage, err = b.recognizer.WordsFromAudio(ctx, audioToRecognize, voiceLang, usersLabels, customSwearWords)
+		wordsInMessage, err = b.recognizer.WordsFromAudio(ctx, audioToRecognize, voiceLang, usersLabels,
+			enabledChatWords, disabledChatWords)
 		if err != nil {
 			logger.Warnf("Audio recognizer failed: %s", err)
 			b.sendRecognitionErrorMsg(ctx, msg)
@@ -769,7 +794,7 @@ func (b *Bot) setCanDeleteNotificationsHandler(ctx context.Context, msg *models.
 		Info("Set custom value for the CanDeleteNotifications flag")
 
 	if user.CanDeleteNotifications == canDelete {
-		logger.Info("User already have the save value no need to update")
+		logger.Info("User already have the same value no need to update")
 		b.sendOKMsgToUser(ctx, user)
 		return
 	}
@@ -817,4 +842,56 @@ func (b *Bot) setChatLangHandler(ctx context.Context, msg *models.Message) {
 	}
 
 	b.sendOKMsg(ctx, chat.ID)
+}
+
+func (b *Bot) enableSwearWordHandler(ctx context.Context, msg *models.Message) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	chat := msg.Chat
+	_, word := msg.ToCommand()
+	if word == "" {
+		b.sendMissArgMsg(ctx, chat.ID, enableSwearWordCmd, "swear_word")
+		return
+	}
+	word = models.ProcessWord(word)
+
+	logger.WithFields(log.Fields{"chat_id": chat.ID, "swear_word": word}).Info("Save chat - swear word relation in the storage")
+	err := b.storage.EnableChatWord(ctx, chat.ID, word)
+	if err != nil {
+		logger.Errorf("Cannot enable word for chat in storage: %s", err)
+		b.sendErrorMsg(ctx, chat.ID)
+		return
+	}
+
+	b.sendOKMsg(ctx, chat.ID)
+}
+
+func (b *Bot) disableSwearWordHandler(ctx context.Context, msg *models.Message) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+	chat := msg.Chat
+	_, word := msg.ToCommand()
+	if word == "" {
+		b.sendMissArgMsg(ctx, chat.ID, disableSwearWordCmd, "swear_word")
+		return
+	}
+	word = models.ProcessWord(word)
+
+	logger.WithFields(log.Fields{"chat_id": chat.ID, "swear_word": word}).Info("Remove chat - swear word relation in the storage")
+	err := b.storage.DisableChatWord(ctx, chat.ID, word)
+	if err != nil {
+		logger.Errorf("Cannot disable word for chat in storage: %s", err)
+		b.sendErrorMsg(ctx, chat.ID)
+		return
+	}
+
+	b.sendOKMsg(ctx, chat.ID)
+}
+
+func (b *Bot) helpInChatHandler(ctx context.Context, msg *models.Message) {
+	logger := logging.FromContextAndBase(ctx, gLogger)
+
+	logger.WithField("chat_id", msg.Chat.ID).Info("Sending help message to chat")
+	_, err := b.messenger.SendText(ctx, msg.Chat.ID, helpInGroupChat)
+	if err != nil {
+		logger.Errorf("cannot send help to chat: %s", err)
+	}
 }

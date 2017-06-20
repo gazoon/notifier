@@ -30,6 +30,7 @@ type Storage interface {
 	DisableChatWord(ctx context.Context, chatID int, word string) error
 	FilterSwearWordsForChat(ctx context.Context, chatID int, words []string) ([]string, error)
 	GetChatEnabledWords(ctx context.Context, chatID int) ([]string, error)
+	GetChatDisabledWords(ctx context.Context, chatID int) ([]string, error)
 
 	GetOrCreateUser(ctx context.Context, user *models.User, pmid int) error
 	GetUser(ctx context.Context, user *models.User) (bool, error)
@@ -220,6 +221,16 @@ func (ns *NeoStorage) GetChatEnabledWords(ctx context.Context, chatID int) ([]st
 	params := map[string]interface{}{"chat_id": chatID}
 	rows, err := ns.client.QueryRetry(ctx,
 		`MATCH (c:Chat {cid: {chat_id}})-[:WordEnabled]->(w:SwearWord) RETURN w.word`, params)
+	if err != nil {
+		return nil, err
+	}
+	return rowsToStrings(rows)
+}
+
+func (ns *NeoStorage) GetChatDisabledWords(ctx context.Context, chatID int) ([]string, error) {
+	params := map[string]interface{}{"chat_id": chatID}
+	rows, err := ns.client.QueryRetry(ctx,
+		`MATCH (c:Chat {cid: {chat_id}})-[:WordDisabled]->(w:SwearWord) RETURN w.word`, params)
 	if err != nil {
 		return nil, err
 	}
