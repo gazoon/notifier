@@ -3,7 +3,6 @@ package msgsqueue
 import (
 	"context"
 	"notifier/libs/logging"
-	"notifier/libs/models"
 	"sync"
 	"time"
 
@@ -20,7 +19,7 @@ import (
 
 const (
 	MAX_PROCESSING_TIME = 20 * time.Second
-	mongoCollection = "messages"
+	mongoCollection     = "messages"
 )
 
 var (
@@ -29,11 +28,11 @@ var (
 )
 
 type Producer interface {
-	Put(ctx context.Context, msg *models.Message) error
+	Put(ctx context.Context, msg *Message) error
 }
 
 type Consumer interface {
-	GetNext() (*models.Message, string, bool)
+	GetNext() (*Message, string, bool)
 	FinishProcessing(ctx context.Context, processingID string)
 	StopGivingMsgs()
 }
@@ -54,7 +53,7 @@ func NewMongoQueue(database, user, password, host string, port, timeout, poolSiz
 	return &MongoQueue{client: client, BaseConsumer: queue.NewBaseConsumer(fetchDelay)}, nil
 }
 
-func (mq *MongoQueue) Put(ctx context.Context, msg *models.Message) error {
+func (mq *MongoQueue) Put(ctx context.Context, msg *Message) error {
 	err := mq.client.UpsertRetry(ctx,
 		bson.M{"chat_id": msg.Chat.ID, "msgs.message_id": bson.M{"$ne": msg.ID}},
 		bson.M{
@@ -67,8 +66,8 @@ func (mq *MongoQueue) Put(ctx context.Context, msg *models.Message) error {
 	return err
 }
 
-func (mq *MongoQueue) GetNext() (*models.Message, string, bool) {
-	var result *models.Message
+func (mq *MongoQueue) GetNext() (*Message, string, bool) {
+	var result *Message
 	var processingID string
 	isStopped := mq.FetchLoop(func() bool {
 		var isFetched bool
@@ -78,10 +77,10 @@ func (mq *MongoQueue) GetNext() (*models.Message, string, bool) {
 	return result, processingID, isStopped
 }
 
-func (mq *MongoQueue) tryGetNext() (*models.Message, string, bool) {
+func (mq *MongoQueue) tryGetNext() (*Message, string, bool) {
 	var doc struct {
-		ChatID int               `bson:"chat_id"`
-		Msgs   []*models.Message `bson:"msgs"`
+		ChatID int        `bson:"chat_id"`
+		Msgs   []*Message `bson:"msgs"`
 	}
 	currentTime := time.Now()
 	processingID := newProcessingID()
@@ -166,7 +165,7 @@ func newProcessingID() string {
 
 type chatMessages struct {
 	chatID       int
-	msgs         []*models.Message
+	msgs         []*Message
 	processedAt  *time.Time
 	processingID *string
 }
@@ -205,8 +204,8 @@ func NewInMemory() *InMemoryQueue {
 	}
 }
 
-func (mq *InMemoryQueue) GetNext() (*models.Message, string, bool) {
-	var result *models.Message
+func (mq *InMemoryQueue) GetNext() (*Message, string, bool) {
+	var result *Message
 	var processingID string
 	isStopped := mq.FetchLoop(func() bool {
 		var isFetched bool
@@ -216,7 +215,7 @@ func (mq *InMemoryQueue) GetNext() (*models.Message, string, bool) {
 	return result, processingID, isStopped
 }
 
-func (mq *InMemoryQueue) tryGetNext() (*models.Message, string, bool) {
+func (mq *InMemoryQueue) tryGetNext() (*Message, string, bool) {
 	mq.mx.Lock()
 	defer mq.mx.Unlock()
 	currentTime := time.Now()
@@ -242,7 +241,7 @@ func (mq *InMemoryQueue) tryGetNext() (*models.Message, string, bool) {
 	return msg, processingID, true
 }
 
-func (mq *InMemoryQueue) Put(ctx context.Context, msg *models.Message) error {
+func (mq *InMemoryQueue) Put(ctx context.Context, msg *Message) error {
 	mq.mx.Lock()
 	defer mq.mx.Unlock()
 	_, result := mq.storage.Find(func(index int, value interface{}) bool {

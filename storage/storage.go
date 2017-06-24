@@ -3,8 +3,8 @@ package storage
 import (
 	"context"
 	"notifier/libs/logging"
-	"notifier/libs/models"
 	"notifier/libs/neo"
+	"notifier/models"
 
 	"reflect"
 
@@ -33,7 +33,7 @@ type Storage interface {
 	GetChatDisabledWords(ctx context.Context, chatID int) ([]string, error)
 
 	GetOrCreateUser(ctx context.Context, user *models.User, pmid int) error
-	GetUser(ctx context.Context, user *models.User) (bool, error)
+	GetUser(ctx context.Context, userID int) (*models.User, error)
 	AddLabelToUser(ctx context.Context, userID int, label string) error
 	RemoveLabelFromUser(ctx context.Context, userID int, label string) error
 	SetNotificationDelay(ctx context.Context, userID, delay int) error
@@ -133,20 +133,21 @@ func (ns *NeoStorage) GetOrCreateUser(ctx context.Context, user *models.User, pm
 	return errors.Wrap(err, "user deserialization failed")
 }
 
-func (ns *NeoStorage) GetUser(ctx context.Context, user *models.User) (bool, error) {
-	params := map[string]interface{}{"user_id": user.ID}
+func (ns *NeoStorage) GetUser(ctx context.Context, userID int) (*models.User, error) {
+	params := map[string]interface{}{"user_id": userID}
 	row, err := ns.client.QueryOneRetry(ctx, `MATCH (u:User {uid: {user_id}}) RETURN u`, params)
 	if err == sql.ErrNoRows {
-		return false, nil
+		return nil, nil
 	}
 	if err != nil {
-		return false, err
+		return nil, err
 	}
+	user := &models.User{}
 	err = rowToUser(row, user)
 	if err != nil {
-		return false, errors.Wrap(err, "user deserialization failed")
+		return nil, errors.Wrap(err, "user deserialization failed")
 	}
-	return true, nil
+	return user, nil
 }
 
 func (ns *NeoStorage) AddLabelToUser(ctx context.Context, userID int, label string) error {
@@ -320,7 +321,6 @@ func rowToUser(row []interface{}, user *models.User) error {
 			reflect.TypeOf(data["name"]), reflect.TypeOf(data["notification_delay"]), reflect.TypeOf(data["lbls"]),
 			reflect.TypeOf(data["mentioning"]), reflect.TypeOf(data["delete_notifications"]))
 	}
-
 	labels := make([]string, len(lbls))
 	for i, item := range lbls {
 		label, ok := item.(string)

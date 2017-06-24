@@ -1,11 +1,11 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"notifier/config"
 	"notifier/core"
-	"notifier/libs/models"
+	"context"
+	"notifier/models"
 )
 
 func main() {
@@ -19,9 +19,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	params := map[string]interface{}{"lang": models.DefaultLang}
+	params := map[string]interface{}{"lang":models.DefaultLang}
 	err = db.Exec(context.Background(), `match (c:Chat) set c.lang={lang}`, params)
 	if err != nil {
 		panic(err)
 	}
 }
+

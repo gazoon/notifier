@@ -1,9 +1,7 @@
 package gateway
 
 import (
-	"notifier/config"
 	"notifier/libs/logging"
-	"notifier/libs/models"
 	"time"
 
 	"context"
@@ -25,7 +23,7 @@ const (
 	audioSampleRate = 16000
 )
 
-func transformUser(u *tgbotapi.User) *models.User {
+func transformUser(u *tgbotapi.User) *msgsqueue.User {
 	if u == nil {
 		return nil
 	}
@@ -33,7 +31,7 @@ func transformUser(u *tgbotapi.User) *models.User {
 	if u.LastName != "" {
 		name += " " + u.LastName
 	}
-	return &models.User{
+	return &msgsqueue.User{
 		ID:       u.ID,
 		Name:     name,
 		Username: u.UserName,
@@ -47,12 +45,15 @@ func prepareContext(requestID string) context.Context {
 }
 
 type TelegramPoller struct {
-	queue   msgsqueue.Producer
-	botName string
+	queue       msgsqueue.Producer
+	botName     string
+	pollTimeout int
+	retryDelay  int
+	apiToken    string
 }
 
-func NewTelegramPoller(queue msgsqueue.Producer, botName string) *TelegramPoller {
-	return &TelegramPoller{queue: queue, botName: botName}
+func NewTelegramPoller(queue msgsqueue.Producer, apiToken, botName string, pollTimeout, retryDelay int) *TelegramPoller {
+	return &TelegramPoller{queue: queue, botName: botName, apiToken: apiToken, pollTimeout: pollTimeout, retryDelay: retryDelay}
 }
 
 func (tp *TelegramPoller) userIsBot(u *tgbotapi.User) bool {
@@ -62,21 +63,21 @@ func (tp *TelegramPoller) userIsBot(u *tgbotapi.User) bool {
 	return u.UserName == tp.botName
 }
 
-func (tp *TelegramPoller) updateMessageToModel(updateMessage *tgbotapi.Message) (*models.Message, error) {
+func (tp *TelegramPoller) updateMessageToModel(updateMessage *tgbotapi.Message) (*msgsqueue.Message, error) {
 	if updateMessage.Chat == nil {
 		return nil, errors.New("message without chat")
 	}
 	if updateMessage.From == nil {
 		return nil, errors.New("message without from")
 	}
-	var voice *models.Voice
+	var voice *msgsqueue.Voice
 	if updateMessage.Voice != nil {
 		var voiceSize *int
 		size := updateMessage.Voice.FileSize
 		if size != 0 {
 			voiceSize = &size
 		}
-		voice = &models.Voice{
+		voice = &msgsqueue.Voice{
 			ID:         updateMessage.Voice.FileID,
 			Duration:   updateMessage.Voice.Duration,
 			Size:       voiceSize,
@@ -89,11 +90,11 @@ func (tp *TelegramPoller) updateMessageToModel(updateMessage *tgbotapi.Message) 
 		newChatMember = &(*updateMessage.NewChatMembers)[0]
 	}
 	chatID := int(updateMessage.Chat.ID)
-	message := &models.Message{
+	message := &msgsqueue.Message{
 		ID:    updateMessage.MessageID,
 		Text:  strings.TrimSpace(updateMessage.Text),
 		Voice: voice,
-		Chat: &models.Chat{
+		Chat: &msgsqueue.Chat{
 			ID:        chatID,
 			IsPrivate: updateMessage.Chat.IsPrivate(),
 			Title:     updateMessage.Chat.Title,
@@ -136,21 +137,19 @@ func (tp *TelegramPoller) processUpdate(update *tgbotapi.Update) {
 }
 
 func (tp *TelegramPoller) Start() error {
-	conf := config.GetInstance()
-	bot, err := tgbotapi.NewBotAPI(conf.Telegram.APIToken)
+	bot, err := tgbotapi.NewBotAPI(tp.apiToken)
 	if err != nil {
 		return errors.Wrap(err, "telegram api initialization failed")
 	}
 	gLogger.Info("Starting polling for updates")
-	retryDelay := conf.TelegramPolling.RetryDelay
-	updatesConf := tgbotapi.UpdateConfig{Timeout: conf.TelegramPolling.PollTimeout}
+	updatesConf := tgbotapi.UpdateConfig{Timeout: tp.pollTimeout}
 	go func() {
 		for {
 			gLogger.Info("Requesting new updates from API")
 			updates, err := bot.GetUpdates(updatesConf)
 			if err != nil {
-				gLogger.Warnf("Failed to get updates: %s retrying in %d seconds...", err, retryDelay)
-				time.Sleep(time.Second * time.Duration(retryDelay))
+				gLogger.Warnf("Failed to get updates: %s retrying in %d seconds...", err, tp.retryDelay)
+				time.Sleep(time.Second * time.Duration(tp.retryDelay))
 				continue
 			}
 			gLogger.Infof("Telegram API returns updates: %+v", updates)

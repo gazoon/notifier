@@ -10,7 +10,6 @@
     "retries_interval": 500
   },
   "telegram_polling": {
-    "channel_size": 100,
     "poll_timeout": 60,
     "retry_delay": 3
   },

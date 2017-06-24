@@ -1,2 +1,3 @@
 23. add neo timeouts
 25. http client?
+26. telegram messages duplication handing

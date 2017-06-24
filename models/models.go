@@ -4,6 +4,7 @@ import (
 	"notifier/libs/logging"
 	"strings"
 	"time"
+	"notifier/libs/queue/messages"
 )
 
 const (
@@ -114,74 +115,19 @@ var (
 	}
 )
 
-type Message struct {
-	ID             int       `bson:"message_id"`
-	RequestID      string    `bson:"request_id"`
-	Chat           *Chat     `bson:"chat"`
-	Text           string    `bson:"text"`
-	Voice          *Voice    `bson:"voice"`
-	From           *User     `bson:"from"`
-	NewChatMember  *User     `bson:"new_chat_member"`
-	LeftChatMember *User     `bson:"left_chat_member"`
-	IsBotLeft      bool      `bson:"is_bot_left"`
-	IsBotAdded     bool      `bson:"is_bot_added"`
-	CreatedAt      time.Time `bson:"created_at"`
-}
-
-func (m Message) String() string {
-	return logging.ObjToString(&m)
-}
-
-func (m *Message) ToCommand() (string, string) {
-	text := strings.TrimSpace(m.Text)
-	parts := strings.SplitN(text, " ", 2)
-	cmd := strings.ToLower(strings.TrimSpace(parts[0]))
-	args := ""
-	if len(parts) > 1 {
-		args = strings.TrimSpace(parts[1])
-	}
-	return cmd, args
-}
-
 type Chat struct {
-	ID        int    `bson:"id"`
-	IsPrivate bool   `bson:"is_private"`
-	Title     string `bson:"title"`
-
+	msgsqueue.Chat
 	Lang string `bson:"-"`
 }
 
-func (c Chat) String() string {
-	return logging.ObjToString(&c)
-}
-
-type Voice struct {
-	ID         string `bson:"id"`
-	Duration   int    `bson:"duration"`
-	Size       *int   `bson:"size"`
-	Encoding   string `bson:"encoding"`
-	SampleRate int    `bson:"sample_rate"`
-}
-
-func (v Voice) String() string {
-	return logging.ObjToString(&v)
-}
 
 type User struct {
-	ID int `bson:"id"`
-	//id of the private chat with the user
-	Username string `bson:"username"`
-	Name     string `bson:"name"`
-
+	msgsqueue.User
 	PMID                   int      `bson:"pmid"`
 	NotificationDelay      int      `bson:"-"`
 	CanDeleteNotifications bool     `bson:"-"`
 	Labels                 []string `bson:"-"`
 	MentioningMethod       string   `bson:"-"`
-}
-
-func (u User) String() string {
-	return logging.ObjToString(&u)
 }
 
 func (u *User) DefaultLabels() []string {
@@ -193,7 +139,7 @@ type Notification struct {
 	RequestID string    `bson:"request_id"`
 	Text      string    `bson:"text"`
 	ReadyAt   time.Time `bson:"ready_at"`
-	User      *User     `bson:"user"`
+	UserID      int     `bson:"user_id"`
 	MessageID int       `bson:"message_id"`
 	ChatID    int       `bson:"chat_id"`
 }
@@ -203,7 +149,7 @@ func NewNotification(user *User, msgID, chatID int, text, requestID string) *Not
 		RequestID: requestID,
 		Text:      text,
 		ReadyAt:   time.Now().Add(time.Second * time.Duration(user.NotificationDelay)),
-		User:      user,
+		UserID:      user.ID,
 		MessageID: msgID,
 		ChatID:    chatID,
 	}

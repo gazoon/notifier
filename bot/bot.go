@@ -6,9 +6,8 @@ import (
 	"notifier/config"
 	"notifier/libs/logging"
 	"notifier/libs/messenger"
-	"notifier/libs/models"
 	"notifier/libs/queue/messages"
-	"notifier/libs/queue/notifications"
+	"notifier/models"
 	"notifier/storage"
 	"strconv"
 	"strings"
@@ -16,12 +15,12 @@ import (
 
 	"notifier/libs/speech"
 
-	"notifier/libs/notifications_registry"
-
 	"unicode/utf8"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/pkg/errors"
+	"notifier/notifications"
+	"notifier/notifications_registry"
 )
 
 const (
@@ -78,7 +77,7 @@ var (
 	okText = "OK."
 )
 
-func prepareContext(msg *models.Message) context.Context {
+func prepareContext(msg *msgsqueue.Message) context.Context {
 	ctx := context.Background()
 	requestID := msg.RequestID
 	logger := logging.WithRequestID(requestID)
@@ -87,7 +86,7 @@ func prepareContext(msg *models.Message) context.Context {
 }
 
 type Handler struct {
-	Func func(ctx context.Context, msg *models.Message)
+	Func func(ctx context.Context, msg *msgsqueue.Message)
 	Name string
 }
 
@@ -177,7 +176,7 @@ func (b *Bot) Stop() {
 	gLogger.Info("All workers've been stopped")
 }
 
-func (b *Bot) onMessage(msg *models.Message, processingID string) {
+func (b *Bot) onMessage(msg *msgsqueue.Message, processingID string) {
 	ctx := prepareContext(msg)
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("msg", msg).Info("Message received from incoming queue")
@@ -186,7 +185,7 @@ func (b *Bot) onMessage(msg *models.Message, processingID string) {
 	b.messagesQueue.FinishProcessing(ctx, processingID)
 }
 
-func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {
+func (b *Bot) dispatchMessage(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	var handler *Handler
 	if !msg.Chat.IsPrivate {
@@ -219,38 +218,40 @@ func (b *Bot) dispatchMessage(ctx context.Context, msg *models.Message) {
 	handler.Func(ctx, msg)
 }
 
-func (b *Bot) syncUserWithStorage(ctx context.Context, user *models.User, userChatID int) bool {
+func (b *Bot) syncUserWithStorage(ctx context.Context, queueUser *msgsqueue.User, userChatID int) (*models.User, bool) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
+	user := &models.User{User: *queueUser}
 	logger.WithField("user", user).Info("Saving user in the storage if doesn't exist")
 	err := b.storage.GetOrCreateUser(ctx, user, userChatID)
 	if err != nil {
 		logger.Errorf("Cannot save user in the storage: %s", err)
 		user.PMID = userChatID
-		return false
+		return user, false
 	}
-	return true
+	return user, true
 }
 
-func (b *Bot) updateUserFromStorage(ctx context.Context, user *models.User) bool {
+func (b *Bot) getUserFromStorage(ctx context.Context, userID int) *models.User {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("user", user).Info("Get user from storage")
-	isExists, err := b.storage.GetUser(ctx, user)
+	logger.WithField("user_id", userID).Info("Get user from storage")
+	user, err := b.storage.GetUser(ctx, userID)
 	if err != nil {
 		logger.Errorf("Storage doesn't return user data: %s", err)
-		return false
+		return nil
 	}
-	return isExists
+	return user
 }
 
-func (b *Bot) syncChatWithStorage(ctx context.Context, chat *models.Chat) bool {
+func (b *Bot) syncChatWithStorage(ctx context.Context, queueChat *msgsqueue.Chat) (*models.Chat, bool) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
+	chat := &models.Chat{Chat: *queueChat}
 	logger.WithField("chat", chat).Info("Saving chat in the storage")
 	err := b.storage.GetOrCreateChat(ctx, chat)
 	if err != nil {
 		logger.Errorf("Cannot save chat in the storage: %s", err)
-		return false
+		return chat, false
 	}
-	return true
+	return chat, true
 }
 
 func (b *Bot) addUserToChat(ctx context.Context, chatID, userID int) bool {
@@ -264,7 +265,7 @@ func (b *Bot) addUserToChat(ctx context.Context, chatID, userID int) bool {
 	return true
 }
 
-func (b *Bot) notifyUsers(ctx context.Context, users []*models.User, msg *models.Message, notificationText string) {
+func (b *Bot) notifyUsers(ctx context.Context, users []*models.User, msg *msgsqueue.Message, notificationText string) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	for _, user := range users {
 		notification := models.NewNotification(user, msg.ID, msg.Chat.ID, notificationText,
@@ -292,7 +293,7 @@ func (b *Bot) sendErrorMsg(ctx context.Context, chatID int) {
 	}
 }
 
-func (b *Bot) sendRecognitionErrorMsg(ctx context.Context, msg *models.Message) {
+func (b *Bot) sendRecognitionErrorMsg(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "msg_id": msg.ID}).Info("Sending recognition error to the chat")
 	errorText := fmt.Sprintf(recognitionErrTemplate, msg.RequestID)
@@ -303,7 +304,7 @@ func (b *Bot) sendRecognitionErrorMsg(ctx context.Context, msg *models.Message) 
 	}
 }
 
-func (b *Bot) sendSwearDetectionReport(ctx context.Context, msg *models.Message, result string) {
+func (b *Bot) sendSwearDetectionReport(ctx context.Context, msg *msgsqueue.Message, result string) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "msg_id": msg.ID, "result": result}).
 		Info("Sending swear report to the chat")
@@ -407,11 +408,10 @@ func (b *Bot) filterNotChatUsers(ctx context.Context, users []*models.User, chat
 	return filteredUsers
 }
 
-func (b *Bot) commandsListHandler(ctx context.Context, msg *models.Message) {
-	user := msg.From
+func (b *Bot) commandsListHandler(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
-	b.syncUserWithStorage(ctx, user, msg.Chat.ID)
+	user, _ := b.syncUserWithStorage(ctx, msg.From, msg.Chat.ID)
 
 	logger.WithField("user_id", user.ID).Info("Sending the list of commands")
 	_, err := b.messenger.SendText(ctx, user.PMID, helpInPrivateChat)
@@ -453,18 +453,17 @@ func (b *Bot) removeUserNotifications(ctx context.Context, user *models.User, ch
 
 }
 
-func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
+func (b *Bot) regularMessageHandler(ctx context.Context, msg *msgsqueue.Message) {
 	conf := config.GetInstance()
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	chat := msg.Chat
-	if !b.syncChatWithStorage(ctx, chat) {
+	chat, ok := b.syncChatWithStorage(ctx, msg.Chat)
+	if !ok {
 		return
 	}
-	sender := msg.From
-	b.addUserToChat(ctx, chat.ID, sender.ID)
+	b.addUserToChat(ctx, chat.ID, msg.From.ID)
 
-	isExists := b.updateUserFromStorage(ctx, sender)
-	if isExists {
+	sender := b.getUserFromStorage(ctx, msg.From.ID)
+	if sender != nil {
 		b.removeUserNotifications(ctx, sender, chat.ID)
 	}
 	var isVoiceMessage bool
@@ -488,7 +487,7 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *models.Message) {
 	logger.WithField("users", users).Info("Users in the chat")
 
 	users = b.filterNotChatUsers(ctx, users, chat)
-	if !conf.NotifyYourself {
+	if !conf.NotifyYourself && sender != nil {
 		// for debug purposes
 		logger.WithField("yourself", sender).Info("Excluding yourself from the list of users to notify")
 		users = models.ExcludeUserFromList(users, sender)
@@ -591,17 +590,17 @@ func (b *Bot) detectSwearWord(ctx context.Context, chatID int, words []string) (
 	return "", nil
 }
 
-func (b *Bot) addChatMemberHandler(ctx context.Context, msg *models.Message) {
-	chat := msg.Chat
+func (b *Bot) addChatMemberHandler(ctx context.Context, msg *msgsqueue.Message) {
 	userID := msg.NewChatMember.ID
-	if !b.syncChatWithStorage(ctx, chat) {
+	chat, ok := b.syncChatWithStorage(ctx, msg.Chat)
+	if !ok {
 		return
 	}
 
 	b.addUserToChat(ctx, chat.ID, userID)
 }
 
-func (b *Bot) removeChatMemberHandler(ctx context.Context, msg *models.Message) {
+func (b *Bot) removeChatMemberHandler(ctx context.Context, msg *msgsqueue.Message) {
 	chat := msg.Chat
 	userID := msg.LeftChatMember.ID
 	logger := logging.FromContextAndBase(ctx, gLogger)
@@ -613,9 +612,8 @@ func (b *Bot) removeChatMemberHandler(ctx context.Context, msg *models.Message) 
 	}
 }
 
-func (b *Bot) createChatHandler(ctx context.Context, msg *models.Message) {
-	chat := msg.Chat
-	ok := b.syncChatWithStorage(ctx, chat)
+func (b *Bot) createChatHandler(ctx context.Context, msg *msgsqueue.Message) {
+	chat, ok := b.syncChatWithStorage(ctx, msg.Chat)
 	if !ok {
 		b.sendErrorMsg(ctx, chat.ID)
 		return
@@ -628,7 +626,7 @@ func (b *Bot) createChatHandler(ctx context.Context, msg *models.Message) {
 	}
 }
 
-func (b *Bot) deleteChatHandler(ctx context.Context, msg *models.Message) {
+func (b *Bot) deleteChatHandler(ctx context.Context, msg *msgsqueue.Message) {
 	chatID := msg.Chat.ID
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("chat_id", chatID).Info("Delete chat entry from the storage")
@@ -639,13 +637,12 @@ func (b *Bot) deleteChatHandler(ctx context.Context, msg *models.Message) {
 	}
 }
 
-func (b *Bot) addUserLabelHandler(ctx context.Context, msg *models.Message) {
-	user := msg.From
+func (b *Bot) addUserLabelHandler(ctx context.Context, msg *msgsqueue.Message) {
 	_, label := msg.ToCommand()
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	label = models.ProcessWord(label)
-
-	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
+	user, ok := b.syncUserWithStorage(ctx, msg.From, msg.Chat.ID)
+	if !ok {
 		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
@@ -666,13 +663,13 @@ func (b *Bot) addUserLabelHandler(ctx context.Context, msg *models.Message) {
 	b.sendOKMsgToUser(ctx, user)
 }
 
-func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
-	user := msg.From
+func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *msgsqueue.Message) {
 	_, label := msg.ToCommand()
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	label = models.ProcessWord(label)
 
-	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
+	user, ok := b.syncUserWithStorage(ctx, msg.From, msg.Chat.ID)
+	if !ok {
 		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
@@ -693,10 +690,9 @@ func (b *Bot) removeUserLabelHandler(ctx context.Context, msg *models.Message) {
 	b.sendOKMsgToUser(ctx, user)
 }
 
-func (b *Bot) showUserLabelsHandler(ctx context.Context, msg *models.Message) {
-	user := msg.From
-
-	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
+func (b *Bot) showUserLabelsHandler(ctx context.Context, msg *msgsqueue.Message) {
+	user, ok := b.syncUserWithStorage(ctx, msg.From, msg.Chat.ID)
+	if !ok {
 		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
@@ -704,11 +700,11 @@ func (b *Bot) showUserLabelsHandler(ctx context.Context, msg *models.Message) {
 	b.sendUserLabels(ctx, user)
 }
 
-func (b *Bot) setDelayHandler(ctx context.Context, msg *models.Message) {
-	user := msg.From
+func (b *Bot) setDelayHandler(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
-	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
+	user, ok := b.syncUserWithStorage(ctx, msg.From, msg.Chat.ID)
+	if !ok {
 		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
@@ -736,11 +732,11 @@ func (b *Bot) setDelayHandler(ctx context.Context, msg *models.Message) {
 	b.sendOKMsgToUser(ctx, user)
 }
 
-func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *models.Message) {
-	user := msg.From
+func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
-	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
+	user, ok := b.syncUserWithStorage(ctx, msg.From, msg.Chat.ID)
+	if !ok {
 		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
@@ -751,7 +747,7 @@ func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *models.Messag
 		return
 	}
 	mentioningMethod = strings.ToLower(mentioningMethod)
-	ok := models.IsValidMentioningMethod(mentioningMethod)
+	ok = models.IsValidMentioningMethod(mentioningMethod)
 	if !ok {
 		errInfo := errors.Errorf("valid values: %s", models.MentioningMethodsList)
 		b.sendBadArgMsgToUser(ctx, user, mentioningMethodCmd, "mentioning_method", mentioningMethod, errInfo)
@@ -770,11 +766,11 @@ func (b *Bot) setMentioningMethodHandler(ctx context.Context, msg *models.Messag
 	b.sendOKMsgToUser(ctx, user)
 }
 
-func (b *Bot) setCanDeleteNotificationsHandler(ctx context.Context, msg *models.Message) {
-	user := msg.From
+func (b *Bot) setCanDeleteNotificationsHandler(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
-	if !b.syncUserWithStorage(ctx, user, msg.Chat.ID) {
+	user, ok := b.syncUserWithStorage(ctx, msg.From, msg.Chat.ID)
+	if !ok {
 		b.sendErrorMsgToUser(ctx, user)
 		return
 	}
@@ -818,7 +814,7 @@ func (b *Bot) setCanDeleteNotificationsHandler(ctx context.Context, msg *models.
 	b.sendOKMsgToUser(ctx, user)
 }
 
-func (b *Bot) setChatLangHandler(ctx context.Context, msg *models.Message) {
+func (b *Bot) setChatLangHandler(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	chat := msg.Chat
 	_, lang := msg.ToCommand()
@@ -844,7 +840,7 @@ func (b *Bot) setChatLangHandler(ctx context.Context, msg *models.Message) {
 	b.sendOKMsg(ctx, chat.ID)
 }
 
-func (b *Bot) enableSwearWordHandler(ctx context.Context, msg *models.Message) {
+func (b *Bot) enableSwearWordHandler(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	chat := msg.Chat
 	_, word := msg.ToCommand()
@@ -865,7 +861,7 @@ func (b *Bot) enableSwearWordHandler(ctx context.Context, msg *models.Message) {
 	b.sendOKMsg(ctx, chat.ID)
 }
 
-func (b *Bot) disableSwearWordHandler(ctx context.Context, msg *models.Message) {
+func (b *Bot) disableSwearWordHandler(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	chat := msg.Chat
 	_, word := msg.ToCommand()
@@ -886,7 +882,7 @@ func (b *Bot) disableSwearWordHandler(ctx context.Context, msg *models.Message) 
 	b.sendOKMsg(ctx, chat.ID)
 }
 
-func (b *Bot) helpInChatHandler(ctx context.Context, msg *models.Message) {
+func (b *Bot) helpInChatHandler(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 
 	logger.WithField("chat_id", msg.Chat.ID).Info("Sending help message to chat")

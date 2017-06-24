@@ -47,7 +47,8 @@ func main() {
 		panic(err)
 	}
 	botService := bot.New(incomingQueue, outgoingQueue, mongoNotificationsRegistry, telegramMessenger, dataStorage, googleRecognizer)
-	pollerService := gateway.NewTelegramPoller(incomingQueue, conf.Telegram.BotName)
+	pollerService := gateway.NewTelegramPoller(incomingQueue, conf.Telegram.APIToken, conf.Telegram.BotName,
+		conf.TelegramPolling.PollTimeout, conf.TelegramPolling.RetryDelay)
 	senderService := sender.New(outgoingQueue, mongoNotificationsRegistry, telegramMessenger, dataStorage)
 	gLogger.Info("Starting bot service")
 	botService.Start()

@@ -5,9 +5,9 @@ import (
 	"notifier/config"
 	"notifier/libs/logging"
 	"notifier/libs/messenger"
-	"notifier/libs/models"
-	"notifier/libs/notifications_registry"
-	"notifier/libs/queue/notifications"
+	"notifier/models"
+	"notifier/notifications"
+	"notifier/notifications_registry"
 	"notifier/storage"
 	"sync"
 	"time"
@@ -59,14 +59,18 @@ func (s *Sender) onNotification(notification *models.Notification) {
 	ctx := prepareContext(notification.RequestID)
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	logger.WithField("notification", notification).Info("Notification received from outgoing queue")
-	s.updateUserFromStorage(ctx, notification.User)
-	sentMessageIDs := s.sendNotification(ctx, notification)
-	s.saveToRegistry(ctx, notification, sentMessageIDs)
+	user := s.getUserFromStorage(ctx, notification.UserID)
+	if user == nil {
+		logger.WithField("user_id", notification.UserID).Info("Cannot notify not registered user")
+		return
+	}
+	sentMessageIDs := s.sendNotification(ctx, notification, user)
+	s.saveToRegistry(ctx, notification, user, sentMessageIDs)
 }
 
-func (s *Sender) saveToRegistry(ctx context.Context, notification *models.Notification, messageIDs []int) {
+func (s *Sender) saveToRegistry(ctx context.Context, notification *models.Notification, user *models.User, messageIDs []int) {
+
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	user := notification.User
 	if !user.CanDeleteNotifications {
 		logger.WithField("user_id", user.ID).Info("CanDeleteNotifications is false no need to save notifications to the registry")
 		return
@@ -87,26 +91,28 @@ func (s *Sender) saveToRegistry(ctx context.Context, notification *models.Notifi
 	}
 }
 
-func (s *Sender) updateUserFromStorage(ctx context.Context, user *models.User) {
+func (s *Sender) getUserFromStorage(ctx context.Context, userID int) *models.User {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("user", user).Info("Get user from storage")
-	_, err := s.storage.GetUser(ctx, user)
+	logger.WithField("user_id", userID).Info("Get user from storage")
+	user, err := s.storage.GetUser(ctx, userID)
 	if err != nil {
 		logger.Errorf("Storage failed to return user data: %s", err)
+		return nil
 	}
+	return user
 }
 
-func (s *Sender) sendNotification(ctx context.Context, notification *models.Notification) []int {
+func (s *Sender) sendNotification(ctx context.Context, notification *models.Notification, user *models.User) []int {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	var sentMessageIDs []int
-	logger.WithField("user", notification.User).Info("Sending notification to the user")
-	textMsgID, err := s.messenger.SendText(ctx, notification.User.PMID, notification.Text)
+	logger.WithField("user", user).Info("Sending notification to the user")
+	textMsgID, err := s.messenger.SendText(ctx, user.PMID, notification.Text)
 	if err != nil {
 		logger.Errorf("Cannot sent notification text to the user: %s", err)
 		return sentMessageIDs
 	}
 	sentMessageIDs = append(sentMessageIDs, textMsgID)
-	forwardMsgID, err := s.messenger.SendForward(ctx, notification.User.PMID, notification.ChatID, notification.MessageID)
+	forwardMsgID, err := s.messenger.SendForward(ctx, user.PMID, notification.ChatID, notification.MessageID)
 	if err != nil {
 		logger.Errorf("Cannot sent notification forward to the user: %s", err)
 		return sentMessageIDs

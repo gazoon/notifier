@@ -37,7 +37,6 @@ type TelegramSettings struct {
 
 type TelegramPolling struct {
 	PollTimeout int `json:"poll_timeout"`
-	ChannelSize int `json:"channel_size"`
 	RetryDelay  int `json:"retry_delay"`
 }
 

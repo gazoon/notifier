@@ -2,7 +2,7 @@ package notifqueue
 
 import (
 	"context"
-	"notifier/libs/models"
+	"notifier/models"
 	"sync"
 
 	"time"
@@ -63,7 +63,7 @@ func (mq *MongoQueue) Put(ctx context.Context, record *models.Notification) erro
 }
 
 func (mq *MongoQueue) Discard(ctx context.Context, user *models.User, chatID int) error {
-	_, err := mq.client.Remove(ctx, bson.M{"user.id": user.ID, "chat_id": chatID})
+	_, err := mq.client.Remove(ctx, bson.M{"user_id": user.ID, "chat_id": chatID})
 	return err
 }
 
@@ -101,9 +101,9 @@ func (mq *MongoQueue) PrepareIndexes() error {
 		return errors.Wrap(err, "ready_at index")
 	}
 
-	err = mq.client.CreateIndex(true, false, "user.id", "chat_id", "message_id")
+	err = mq.client.CreateIndex(true, false, "user_id", "chat_id", "message_id")
 	if err != nil {
-		return errors.Wrap(err, "user.id+chat_id index")
+		return errors.Wrap(err, "user_id+chat_id index")
 	}
 
 	return nil
@@ -149,7 +149,7 @@ func (mq *InMemoryQueue) Discard(ctx context.Context, user *models.User, chatID 
 	defer mq.mx.Unlock()
 	mq.storage = mq.storage.Select(func(index int, value interface{}) bool {
 		record := value.(*models.Notification)
-		return !(record.ChatID == chatID && record.User.ID == user.ID)
+		return !(record.ChatID == chatID && record.UserID == user.ID)
 	})
 	return nil
 }

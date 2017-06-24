@@ -9,14 +9,16 @@ import (
 	"syscall"
 
 	"notifier/libs/queue/messages"
-	"notifier/libs/queue/notifications"
+	"notifier/notifications"
+
+	"notifier/libs/logging"
+	"notifier/libs/neo"
+	"notifier/libs/speech"
+	"reflect"
+
+	"notifier/notifications_registry"
 
 	"github.com/pkg/errors"
-	"notifier/libs/logging"
-	"reflect"
-	"notifier/libs/speech"
-	"notifier/libs/neo"
-	"notifier/libs/notifications_registry"
 )
 
 var (

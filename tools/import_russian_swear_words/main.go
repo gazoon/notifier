@@ -12,7 +12,7 @@ import (
 	"regexp"
 	"strings"
 
-	"notifier/libs/models"
+	"notifier/models"
 
 	"github.com/pkg/errors"
 )
