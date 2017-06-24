@@ -6,14 +6,14 @@ import (
 	"io/ioutil"
 	"notifier/config"
 	"notifier/core"
-	"notifier/libs/logging"
-	"notifier/libs/speech"
 	"notifier/storage"
 	"regexp"
 	"strings"
 
 	"notifier/models"
 
+	"github.com/gazoon/bot_libs/logging"
+	"github.com/gazoon/bot_libs/speech"
 	"github.com/pkg/errors"
 )
 

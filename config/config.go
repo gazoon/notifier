@@ -5,7 +5,7 @@ import (
 
 	"flag"
 	"github.com/pkg/errors"
-	"notifier/libs/config"
+	"github.com/gazoon/bot_libs/config"
 )
 
 var (

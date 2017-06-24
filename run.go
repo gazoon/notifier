@@ -2,13 +2,13 @@ package main
 
 import (
 	"flag"
+	"github.com/gazoon/bot_libs/logging"
 	"notifier/bot"
 	"notifier/config"
 	"notifier/core"
-	"notifier/gateway"
-	"notifier/libs/logging"
 	"notifier/sender"
 
+	"github.com/gazoon/bot_libs/gateway"
 	"github.com/pkg/errors"
 )
 

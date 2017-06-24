@@ -2,9 +2,9 @@ package sender
 
 import (
 	"context"
+	"github.com/gazoon/bot_libs/logging"
+	"github.com/gazoon/bot_libs/messenger"
 	"notifier/config"
-	"notifier/libs/logging"
-	"notifier/libs/messenger"
 	"notifier/models"
 	"notifier/notifications"
 	"notifier/notifications_registry"

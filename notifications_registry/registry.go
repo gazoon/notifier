@@ -2,10 +2,10 @@ package notifregistry
 
 import (
 	"context"
-	"notifier/libs/logging"
-	"notifier/libs/mongo"
 	"time"
 
+	"github.com/gazoon/bot_libs/logging"
+	"github.com/gazoon/bot_libs/mongo"
 	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2/bson"
 )

@@ -2,22 +2,22 @@ package core
 
 import (
 	"notifier/config"
-	"notifier/libs/messenger"
 	"notifier/storage"
 	"os"
 	"os/signal"
 	"syscall"
 
-	"notifier/libs/queue/messages"
 	"notifier/notifications"
 
-	"notifier/libs/logging"
-	"notifier/libs/neo"
-	"notifier/libs/speech"
 	"reflect"
 
 	"notifier/notifications_registry"
 
+	"github.com/gazoon/bot_libs/logging"
+	"github.com/gazoon/bot_libs/messenger"
+	"github.com/gazoon/bot_libs/neo"
+	"github.com/gazoon/bot_libs/queue/messages"
+	"github.com/gazoon/bot_libs/speech"
 	"github.com/pkg/errors"
 )
 

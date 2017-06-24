@@ -7,12 +7,10 @@ import (
 
 	"time"
 
-	"notifier/libs/logging"
-	"notifier/libs/mongo"
-
-	"notifier/libs/queue"
-
 	"github.com/emirpasic/gods/sets/treeset"
+	"github.com/gazoon/bot_libs/logging"
+	"github.com/gazoon/bot_libs/mongo"
+	"github.com/gazoon/bot_libs/queue"
 	"github.com/pkg/errors"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"

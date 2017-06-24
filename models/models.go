@@ -1,10 +1,11 @@
 package models
 
 import (
-	"notifier/libs/logging"
 	"strings"
 	"time"
-	"notifier/libs/queue/messages"
+
+	"github.com/gazoon/bot_libs/logging"
+	"github.com/gazoon/bot_libs/queue/messages"
 )
 
 const (
@@ -120,7 +121,6 @@ type Chat struct {
 	Lang string `bson:"-"`
 }
 
-
 type User struct {
 	msgsqueue.User
 	PMID                   int      `bson:"pmid"`
@@ -139,7 +139,7 @@ type Notification struct {
 	RequestID string    `bson:"request_id"`
 	Text      string    `bson:"text"`
 	ReadyAt   time.Time `bson:"ready_at"`
-	UserID      int     `bson:"user_id"`
+	UserID    int       `bson:"user_id"`
 	MessageID int       `bson:"message_id"`
 	ChatID    int       `bson:"chat_id"`
 }
@@ -149,7 +149,7 @@ func NewNotification(user *User, msgID, chatID int, text, requestID string) *Not
 		RequestID: requestID,
 		Text:      text,
 		ReadyAt:   time.Now().Add(time.Second * time.Duration(user.NotificationDelay)),
-		UserID:      user.ID,
+		UserID:    user.ID,
 		MessageID: msgID,
 		ChatID:    chatID,
 	}

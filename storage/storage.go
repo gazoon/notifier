@@ -2,8 +2,6 @@ package storage
 
 import (
 	"context"
-	"notifier/libs/logging"
-	"notifier/libs/neo"
 	"notifier/models"
 
 	"reflect"
@@ -12,6 +10,8 @@ import (
 
 	"github.com/johnnadratowski/golang-neo4j-bolt-driver/structures/graph"
 	"github.com/pkg/errors"
+	"github.com/gazoon/bot_libs/neo"
+	"github.com/gazoon/bot_libs/logging"
 )
 
 var (

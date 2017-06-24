@@ -4,23 +4,22 @@ import (
 	"context"
 	"fmt"
 	"notifier/config"
-	"notifier/libs/logging"
-	"notifier/libs/messenger"
-	"notifier/libs/queue/messages"
 	"notifier/models"
 	"notifier/storage"
 	"strconv"
 	"strings"
 	"sync"
 
-	"notifier/libs/speech"
-
 	"unicode/utf8"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/gazoon/bot_libs/messenger"
+	"github.com/gazoon/bot_libs/queue/messages"
 	"github.com/pkg/errors"
 	"notifier/notifications"
 	"notifier/notifications_registry"
+	"github.com/gazoon/bot_libs/logging"
+	"github.com/gazoon/bot_libs/speech"
 )
 
 const (
