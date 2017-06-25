@@ -1,3 +1,4 @@
 23. add neo timeouts
 25. http client?
-26. telegram messages duplication handing
+26. telegram messages duplication handing by update id
+27. implement messages queue via kafka + distributed lock

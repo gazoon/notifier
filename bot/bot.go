@@ -13,13 +13,13 @@ import (
 	"unicode/utf8"
 
 	log "github.com/Sirupsen/logrus"
+	"github.com/gazoon/bot_libs/logging"
 	"github.com/gazoon/bot_libs/messenger"
 	"github.com/gazoon/bot_libs/queue/messages"
+	"github.com/gazoon/bot_libs/speech"
 	"github.com/pkg/errors"
 	"notifier/notifications"
 	"notifier/notifications_registry"
-	"github.com/gazoon/bot_libs/logging"
-	"github.com/gazoon/bot_libs/speech"
 )
 
 const (
@@ -186,6 +186,10 @@ func (b *Bot) onMessage(msg *msgsqueue.Message, processingID string) {
 
 func (b *Bot) dispatchMessage(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
+	if msg.MessageID == 0 {
+		logger.Info("Cannot handle messages without message id, skip")
+		return
+	}
 	var handler *Handler
 	if !msg.Chat.IsPrivate {
 		switch {
@@ -267,7 +271,7 @@ func (b *Bot) addUserToChat(ctx context.Context, chatID, userID int) bool {
 func (b *Bot) notifyUsers(ctx context.Context, users []*models.User, msg *msgsqueue.Message, notificationText string) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	for _, user := range users {
-		notification := models.NewNotification(user, msg.ID, msg.Chat.ID, notificationText,
+		notification := models.NewNotification(user, msg.MessageID, msg.Chat.ID, notificationText,
 			msg.RequestID)
 		logger.WithField("notification", notification).Info("Put notification to the queue")
 		err := b.notificationQueue.Put(ctx, notification)
@@ -294,9 +298,9 @@ func (b *Bot) sendErrorMsg(ctx context.Context, chatID int) {
 
 func (b *Bot) sendRecognitionErrorMsg(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "msg_id": msg.ID}).Info("Sending recognition error to the chat")
+	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "msg_id": msg.MessageID}).Info("Sending recognition error to the chat")
 	errorText := fmt.Sprintf(recognitionErrTemplate, msg.RequestID)
-	_, err := b.messenger.SendReply(ctx, msg.Chat.ID, msg.ID, errorText)
+	_, err := b.messenger.SendReply(ctx, msg.Chat.ID, msg.MessageID, errorText)
 	if err != nil {
 		logger.Errorf("Cannot send recognition error msg: %s", err)
 		return
@@ -305,9 +309,9 @@ func (b *Bot) sendRecognitionErrorMsg(ctx context.Context, msg *msgsqueue.Messag
 
 func (b *Bot) sendSwearDetectionReport(ctx context.Context, msg *msgsqueue.Message, result string) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "msg_id": msg.ID, "result": result}).
+	logger.WithFields(log.Fields{"chat_id": msg.Chat.ID, "msg_id": msg.MessageID, "result": result}).
 		Info("Sending swear report to the chat")
-	_, err := b.messenger.SendReply(ctx, msg.Chat.ID, msg.ID, result)
+	_, err := b.messenger.SendReply(ctx, msg.Chat.ID, msg.MessageID, result)
 	if err != nil {
 		logger.Errorf("Cannot send swear report msg: %s", err)
 		return
