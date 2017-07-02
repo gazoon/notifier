@@ -1,4 +1,8 @@
-23. add neo timeouts
 25. http client?
 26. telegram messages duplication handing by update id
 27. implement messages queue via kafka + distributed lock
+28. add calendar
+29. refactor storage
+30. add chat timezone
+31. user could exist in db without pmid?
+32. show plans of mentioned user
