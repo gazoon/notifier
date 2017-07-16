@@ -2,12 +2,8 @@ package core
 
 import (
 	"notifier/config"
-	"notifier/storage"
-	"os"
-	"os/signal"
-	"syscall"
-
 	"notifier/notifications"
+	"notifier/storage"
 
 	"reflect"
 
@@ -84,12 +80,6 @@ func CreateTelegramMessenger() (messenger.Messenger, error) {
 	gLogger.Info("Initializing messenger API")
 	telegramMessenger, err := messenger.NewTelegram(conf.Telegram.APIToken, conf.Telegram.HttpTimeout)
 	return telegramMessenger, errors.Wrap(err, "telegram messenger")
-}
-
-func WaitingForShutdown() {
-	ch := make(chan os.Signal)
-	signal.Notify(ch, syscall.SIGINT, syscall.SIGTERM)
-	gLogger.Infof("Received shutdown signal: %s", <-ch)
 }
 
 type Indexable interface {

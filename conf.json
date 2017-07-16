@@ -29,7 +29,8 @@
     "pool_size": 8,
     "retries_num": 3,
     "retries_interval": 500,
-    "fetch_delay": 500
+    "fetch_delay": 500,
+    "workers_num": 10
   },
   "mongo_messages": {
     "database": "local",
@@ -41,7 +42,8 @@
     "pool_size": 10,
     "retries_num": 3,
     "retries_interval": 500,
-    "fetch_delay": 500
+    "fetch_delay": 500,
+    "workers_num": 10
   },
   "mongo_registry": {
     "database": "local",
@@ -63,9 +65,7 @@
     "api_key": "AIzaSyDdH330k7oCB9MWO7pnNzlQUuDwCjOsvA0",
     "http_timeout": 15
   },
-  "bot_workers_num": 10,
   "notify_yourself": true,
-  "sender_workers_num": 10,
   "service_name": "bot",
   "server_id": "228"
 }

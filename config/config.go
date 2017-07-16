@@ -3,8 +3,6 @@ package config
 import (
 	"sync"
 
-	"flag"
-	"github.com/pkg/errors"
 	"github.com/gazoon/bot_libs/config"
 )
 
@@ -15,8 +13,6 @@ var (
 
 type ServiceConfig struct {
 	config.BaseConfig
-	BotWorkersNum              int                      `json:"bot_workers_num"`
-	SenderWorkerNum            int                      `json:"sender_workers_num"`
 	NotifyYourself             bool                     `json:"notify_yourself"`
 	Neo                        *config.DatabaseSettings `json:"neo"`
 	MongoNotification          *config.DatabaseQueue    `json:"mongo_notification"`
@@ -33,7 +29,7 @@ func Initialization(configPath string) {
 		instance = &ServiceConfig{}
 		err := config.FromJSONFile(configPath, instance)
 		if err != nil {
-			panic(errors.Wrap(err, "cannot load json config"))
+			panic(err)
 		}
 	})
 }
@@ -43,5 +39,5 @@ func GetInstance() *ServiceConfig {
 }
 
 func FromCmdArgs(confPath *string) {
-	flag.StringVar(confPath, "conf", "conf.json", "Path to the config file")
+	config.FromCmdArgs(confPath)
 }

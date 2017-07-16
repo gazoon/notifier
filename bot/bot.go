@@ -8,9 +8,10 @@ import (
 	"notifier/storage"
 	"strconv"
 	"strings"
-	"sync"
-
 	"unicode/utf8"
+
+	"notifier/notifications"
+	"notifier/notifications_registry"
 
 	log "github.com/Sirupsen/logrus"
 	"github.com/gazoon/bot_libs/logging"
@@ -18,8 +19,6 @@ import (
 	"github.com/gazoon/bot_libs/queue/messages"
 	"github.com/gazoon/bot_libs/speech"
 	"github.com/pkg/errors"
-	"notifier/notifications"
-	"notifier/notifications_registry"
 )
 
 const (
@@ -76,21 +75,12 @@ var (
 	okText = "OK."
 )
 
-func prepareContext(msg *msgsqueue.Message) context.Context {
-	ctx := context.Background()
-	requestID := msg.RequestID
-	logger := logging.WithRequestID(requestID)
-	ctx = logging.NewContext(ctx, logger)
-	return ctx
-}
-
 type Handler struct {
 	Func func(ctx context.Context, msg *msgsqueue.Message)
 	Name string
 }
 
 type Bot struct {
-	messagesQueue         msgsqueue.Consumer
 	notificationQueue     notifqueue.Producer
 	notificationsRegistry notifregistry.ReadDeleter
 	messenger             messenger.Messenger
@@ -98,14 +88,12 @@ type Bot struct {
 	recognizer            speech.Recognizer
 	userCommands          map[string]*Handler
 	chatCommands          map[string]*Handler
-	wg                    sync.WaitGroup
 }
 
-func New(messagesQueue msgsqueue.Consumer, notificationQueue notifqueue.Producer, notificationsRegistry notifregistry.ReadDeleter,
+func New(notificationQueue notifqueue.Producer, notificationsRegistry notifregistry.ReadDeleter,
 	messenger messenger.Messenger, storage storage.Storage, recognizer speech.Recognizer) *Bot {
 
 	b := &Bot{
-		messagesQueue:         messagesQueue,
 		notificationQueue:     notificationQueue,
 		notificationsRegistry: notificationsRegistry,
 		messenger:             messenger,
@@ -148,43 +136,7 @@ func (b *Bot) createChatCommandsRegister() map[string]*Handler {
 	return register
 }
 
-func (b *Bot) Start() {
-	conf := config.GetInstance()
-	gLogger.WithField("workers_num", conf.BotWorkersNum).Info("Listening for incoming messages")
-	for i := 0; i < conf.BotWorkersNum; i++ {
-		b.wg.Add(1)
-		go func() {
-			defer b.wg.Done()
-			for {
-				gLogger.Info("Fetching new msg from incoming queue")
-				msg, processingID, ok := b.messagesQueue.GetNext()
-				if !ok {
-					return
-				}
-				b.onMessage(msg, processingID)
-			}
-		}()
-	}
-}
-
-func (b *Bot) Stop() {
-	gLogger.Info("Close incoming queue for reading")
-	b.messagesQueue.StopGivingMsgs()
-	gLogger.Info("Waiting until all workers will process the remaining messages")
-	b.wg.Wait()
-	gLogger.Info("All workers've been stopped")
-}
-
-func (b *Bot) onMessage(msg *msgsqueue.Message, processingID string) {
-	ctx := prepareContext(msg)
-	logger := logging.FromContextAndBase(ctx, gLogger)
-	logger.WithField("msg", msg).Info("Message received from incoming queue")
-	b.dispatchMessage(ctx, msg)
-	logger.WithField("processing_id", processingID).Info("Finish processing incoming message")
-	b.messagesQueue.FinishProcessing(ctx, processingID)
-}
-
-func (b *Bot) dispatchMessage(ctx context.Context, msg *msgsqueue.Message) {
+func (b *Bot) DispatchMessage(ctx context.Context, msg *msgsqueue.Message) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	if msg.MessageID == 0 {
 		logger.Info("Cannot handle messages without message id, skip")
@@ -457,7 +409,6 @@ func (b *Bot) removeUserNotifications(ctx context.Context, user *models.User, ch
 }
 
 func (b *Bot) regularMessageHandler(ctx context.Context, msg *msgsqueue.Message) {
-	conf := config.GetInstance()
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	chat, ok := b.syncChatWithStorage(ctx, msg.Chat)
 	if !ok {
@@ -490,7 +441,7 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *msgsqueue.Message)
 	logger.WithField("users", users).Info("Users in the chat")
 
 	users = b.filterNotChatUsers(ctx, users, chat)
-	if !conf.NotifyYourself && sender != nil {
+	if !config.GetInstance().NotifyYourself && sender != nil {
 		// for debug purposes
 		logger.WithField("yourself", sender).Info("Excluding yourself from the list of users to notify")
 		users = models.ExcludeUserFromList(users, sender)

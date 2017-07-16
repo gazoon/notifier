@@ -2,15 +2,15 @@ package sender
 
 import (
 	"context"
-	"github.com/gazoon/bot_libs/logging"
-	"github.com/gazoon/bot_libs/messenger"
-	"notifier/config"
 	"notifier/models"
 	"notifier/notifications"
 	"notifier/notifications_registry"
 	"notifier/storage"
 	"sync"
 	"time"
+
+	"github.com/gazoon/bot_libs/logging"
+	"github.com/gazoon/bot_libs/messenger"
 )
 
 var (
@@ -22,6 +22,7 @@ type Sender struct {
 	messenger         messenger.Messenger
 	storage           storage.Storage
 	registry          notifregistry.Saver
+	workersNum        int
 	wg                sync.WaitGroup
 }
 
@@ -30,16 +31,16 @@ func prepareContext(requestID string) context.Context {
 	return ctx
 }
 
-func New(notificationQueue notifqueue.Consumer, registry notifregistry.Saver, messenger messenger.Messenger,
+func New(notificationQueue notifqueue.Consumer, workersNum int, registry notifregistry.Saver, messenger messenger.Messenger,
 	storage storage.Storage) *Sender {
 
-	return &Sender{notificationQueue: notificationQueue, registry: registry, messenger: messenger, storage: storage}
+	return &Sender{notificationQueue: notificationQueue, workersNum: workersNum, registry: registry,
+		messenger: messenger, storage: storage}
 }
 
 func (s *Sender) Start() {
-	conf := config.GetInstance()
-	gLogger.WithField("workers_num", conf.SenderWorkerNum).Info("Listening for notifications")
-	for i := 0; i < conf.SenderWorkerNum; i++ {
+	gLogger.WithField("workers_num", s.workersNum).Info("Listening for notifications")
+	for i := 0; i < s.workersNum; i++ {
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()

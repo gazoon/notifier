@@ -9,6 +9,8 @@ import (
 	"notifier/sender"
 
 	"github.com/gazoon/bot_libs/gateway"
+	"github.com/gazoon/bot_libs/queue/messages"
+	"github.com/gazoon/bot_libs/utils"
 	"github.com/pkg/errors"
 )
 
@@ -46,13 +48,15 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	botService := bot.New(incomingQueue, outgoingQueue, mongoNotificationsRegistry, telegramMessenger, dataStorage, googleRecognizer)
+	notifierBot := bot.New(outgoingQueue, mongoNotificationsRegistry, telegramMessenger, dataStorage, googleRecognizer)
+	readerService := msgsqueue.NewReader(incomingQueue, conf.MongoMessages.WorkersNum, notifierBot.DispatchMessage)
 	pollerService := gateway.NewTelegramPoller(incomingQueue, conf.Telegram.APIToken, conf.Telegram.BotName,
 		conf.TelegramPolling.PollTimeout, conf.TelegramPolling.RetryDelay)
-	senderService := sender.New(outgoingQueue, mongoNotificationsRegistry, telegramMessenger, dataStorage)
+	senderService := sender.New(outgoingQueue, conf.MongoNotification.WorkersNum, mongoNotificationsRegistry,
+		telegramMessenger, dataStorage)
 	gLogger.Info("Starting bot service")
-	botService.Start()
-	defer botService.Stop()
+	readerService.Start()
+	defer readerService.Stop()
 	gLogger.Info("Starting sender service")
 	senderService.Start()
 	defer senderService.Stop()
@@ -63,5 +67,5 @@ func main() {
 	}
 	logging.StartLevelToggle(conf.Logging.TogglePath, conf.Logging.TogglePort)
 	gLogger.Info("Server successfully started")
-	core.WaitingForShutdown()
+	utils.WaitingForShutdown()
 }
