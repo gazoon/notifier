@@ -76,7 +76,7 @@ func (r *MongoRegistry) DeleteAllForUser(ctx context.Context, userID int) error 
 
 func (r *MongoRegistry) Get(ctx context.Context, userID, fromChatID int) ([]*SentNotification, error) {
 	var messages []*SentNotification
-	err := r.db.Find(ctx, bson.M{"user_id": userID, "from_chat_id": fromChatID}, "sent_at", maxMessageToProcess, &messages)
+	err := r.db.Find(ctx, bson.M{"user_id": userID, "from_chat_id": fromChatID}, "sent_at", maxMessageToProcess, 0, &messages)
 	return messages, err
 }
 
