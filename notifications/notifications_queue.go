@@ -16,10 +16,6 @@ import (
 	"gopkg.in/mgo.v2/bson"
 )
 
-const (
-	mongoCollection = "notifications"
-)
-
 var (
 	gLogger = logging.WithPackage("notification_queue")
 )
@@ -39,10 +35,10 @@ type MongoQueue struct {
 	*queue.BaseConsumer
 }
 
-func NewMongoQueue(database, user, password, host string, port, timeout, poolSize, retriesNum, retriesInterval,
+func NewMongoQueue(database, collection, user, password, host string, port, timeout, poolSize, retriesNum, retriesInterval,
 	fetchDelay int) (*MongoQueue, error) {
 
-	client, err := mongo.NewClient(database, mongoCollection, user, password, host, port, timeout, poolSize, retriesNum,
+	client, err := mongo.NewClient(database, collection, user, password, host, port, timeout, poolSize, retriesNum,
 		retriesInterval)
 	if err != nil {
 		return nil, err

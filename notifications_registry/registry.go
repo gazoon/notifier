@@ -11,7 +11,6 @@ import (
 )
 
 const (
-	mongoCollection     = "notifications_history"
 	maxMessageToProcess = 100
 )
 
@@ -44,10 +43,10 @@ type MongoRegistry struct {
 	db *mongo.Client
 }
 
-func NewMongoRegistry(database, user, password, host string, port, timeout, poolSize, retriesNum, retriesInterval int) (
+func NewMongoRegistry(database, collection, user, password, host string, port, timeout, poolSize, retriesNum, retriesInterval int) (
 	*MongoRegistry, error) {
 
-	client, err := mongo.NewClient(database, mongoCollection, user, password, host, port, timeout, poolSize, retriesNum,
+	client, err := mongo.NewClient(database, collection, user, password, host, port, timeout, poolSize, retriesNum,
 		retriesInterval)
 	if err != nil {
 		return nil, err

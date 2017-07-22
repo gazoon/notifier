@@ -15,9 +15,9 @@ type ServiceConfig struct {
 	config.BaseConfig
 	NotifyYourself             bool                     `json:"notify_yourself"`
 	Neo                        *config.DatabaseSettings `json:"neo"`
-	MongoNotification          *config.DatabaseQueue    `json:"mongo_notification"`
-	MongoMessages              *config.DatabaseQueue    `json:"mongo_messages"`
-	MongoNotificationsRegistry *config.DatabaseSettings `json:"mongo_registry"`
+	MongoNotification          *config.MongoQueue    `json:"mongo_notification"`
+	MongoMessages              *config.MongoQueue    `json:"mongo_messages"`
+	MongoNotificationsRegistry *config.MongoDBSettings `json:"mongo_registry"`
 	Telegram                   *config.TelegramSettings `json:"telegram"`
 	TelegramPolling            *config.TelegramPolling  `json:"telegram_polling"`
 	Logging                    *config.Logging          `json:"logging"`

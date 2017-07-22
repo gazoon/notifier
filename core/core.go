@@ -31,24 +31,24 @@ func Initialization(confPath string) {
 func CreateMongoMsgs() (*msgsqueue.MongoQueue, error) {
 	conf := config.GetInstance().MongoMessages
 	gLogger.Info("Initializing mongo messages queue")
-	incomingMongoQueue, err := msgsqueue.NewMongoQueue(conf.Database, conf.User, conf.Password, conf.Host, conf.Port,
-		conf.Timeout, conf.PoolSize, conf.RetriesNum, conf.RetriesInterval, conf.FetchDelay)
+	incomingMongoQueue, err := msgsqueue.NewMongoQueue(conf.Database, conf.Collection, conf.User, conf.Password, conf.Host,
+		conf.Port, conf.Timeout, conf.PoolSize, conf.RetriesNum, conf.RetriesInterval, conf.FetchDelay)
 	return incomingMongoQueue, errors.Wrap(err, "mongo messages queue")
 }
 
 func CreateMongoNotifications() (*notifqueue.MongoQueue, error) {
 	conf := config.GetInstance().MongoNotification
 	gLogger.Info("Initializing mongo notification queue")
-	outgoingMongoQueue, err := notifqueue.NewMongoQueue(conf.Database, conf.User, conf.Password, conf.Host, conf.Port,
-		conf.Timeout, conf.PoolSize, conf.RetriesNum, conf.RetriesInterval, conf.FetchDelay)
+	outgoingMongoQueue, err := notifqueue.NewMongoQueue(conf.Database, conf.Collection, conf.User, conf.Password, conf.Host,
+		conf.Port, conf.Timeout, conf.PoolSize, conf.RetriesNum, conf.RetriesInterval, conf.FetchDelay)
 	return outgoingMongoQueue, errors.Wrap(err, "mongo notification queue")
 }
 
 func CreateMongoNotificationsRegistry() (*notifregistry.MongoRegistry, error) {
 	conf := config.GetInstance().MongoNotificationsRegistry
 	gLogger.Info("Initializing mongo notifications registry")
-	outgoingMongoQueue, err := notifregistry.NewMongoRegistry(conf.Database, conf.User, conf.Password, conf.Host, conf.Port,
-		conf.Timeout, conf.PoolSize, conf.RetriesNum, conf.RetriesInterval)
+	outgoingMongoQueue, err := notifregistry.NewMongoRegistry(conf.Database, conf.Collection, conf.User, conf.Password,
+		conf.Host, conf.Port, conf.Timeout, conf.PoolSize, conf.RetriesNum, conf.RetriesInterval)
 	return outgoingMongoQueue, errors.Wrap(err, "mongo notifications registry")
 }
 

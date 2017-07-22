@@ -21,6 +21,7 @@
   },
   "mongo_notification": {
     "database": "local",
+    "collection": "notifications",
     "host": "localhost",
     "port": 27017,
     "user": "",
@@ -34,6 +35,7 @@
   },
   "mongo_messages": {
     "database": "local",
+    "collection": "messages",
     "host": "localhost",
     "port": 27017,
     "user": "",
@@ -47,6 +49,7 @@
   },
   "mongo_registry": {
     "database": "local",
+    "collection": "notifications_history",
     "host": "localhost",
     "port": 27017,
     "user": "",
