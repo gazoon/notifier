@@ -63,7 +63,7 @@ var (
 	notificationTextMentioningTemplate  = "You've been mentioned in the %s chat:"
 	notificationVoiceMentioningTemplate = "You've been mentioned in the %s chat, %s:"
 	noSwearWords                        = "✅ There are no swear words"
-	swearWordFoundTemplate              = "❌ Swear word detected -> %s"
+	swearWordFoundTemplate              = "❌ Swear words were detected -> %s"
 	swearWordsDetectionFailed           = "Cannot detect the presence of swear words."
 	errorText                           = "An internal bot error occurred."
 	noLabelsText                        = "You don't have any labels yet."
@@ -493,16 +493,16 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *msgsqueue.Message)
 	if isVoiceMessage {
 		var swearDetectionReport string
 		logger.Info("Detect are there any swear words in the message")
-		swearWord, err := b.detectSwearWord(ctx, chat.ID, wordsInMessage)
+		swearWords, err := b.detectSwearWord(ctx, chat.ID, wordsInMessage)
 		if err != nil {
 			logger.Errorf("Cannot detect swear word: %s", err)
 			swearDetectionReport = swearWordsDetectionFailed
-		} else if swearWord == "" {
+		} else if swearWords == nil {
 			logger.Info("No swear word was found")
 			swearDetectionReport = noSwearWords
 		} else {
-			logger.WithField("swear_word", swearWord).Info("Swear word was detected")
-			swearDetectionReport = fmt.Sprintf(swearWordFoundTemplate, swearWord)
+			logger.WithField("swear_words", swearWords).Info("Swear word were detected")
+			swearDetectionReport = fmt.Sprintf(swearWordFoundTemplate, strings.Join(swearWords, ", "))
 		}
 		notificationText = fmt.Sprintf(notificationVoiceMentioningTemplate, chat.Title, swearDetectionReport)
 		b.sendSwearDetectionReport(ctx, msg, swearDetectionReport)
@@ -515,7 +515,7 @@ func (b *Bot) regularMessageHandler(ctx context.Context, msg *msgsqueue.Message)
 	b.notifyUsers(ctx, users, msg, notificationText)
 }
 
-func (b *Bot) detectSwearWord(ctx context.Context, chatID int, words []string) (string, error) {
+func (b *Bot) detectSwearWord(ctx context.Context, chatID int, words []string) ([]string, error) {
 	logger := logging.FromContextAndBase(ctx, gLogger)
 	wordsWithPrefixes := words
 	prefixesToOriginal := map[string]string{}
@@ -532,16 +532,17 @@ func (b *Bot) detectSwearWord(ctx context.Context, chatID int, words []string) (
 	logger.WithField("words", wordsWithPrefixes).Info("Filter swear words for particular chat")
 	swearWords, err := b.storage.FilterSwearWordsForChat(ctx, chatID, wordsWithPrefixes)
 	if err != nil {
-		return "", errors.Wrap(err, "storage filter failed")
+		return nil, errors.Wrap(err, "storage filter failed")
 	}
 	logger.WithField("swear_words", swearWords).Info("Swear words for chat")
+	var result []string
 	for _, word := range swearWords {
 		originalWord, ok := prefixesToOriginal[word]
 		if ok {
-			return originalWord, nil
+			result = append(result, originalWord)
 		}
 	}
-	return "", nil
+	return result, nil
 }
 
 func (b *Bot) addChatMemberHandler(ctx context.Context, msg *msgsqueue.Message) {
