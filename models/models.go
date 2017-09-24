@@ -148,7 +148,7 @@ func NewNotification(user *User, msgID, chatID int, text, requestID string) *Not
 	return &Notification{
 		RequestID: requestID,
 		Text:      text,
-		ReadyAt:   time.Now().Add(time.Second * time.Duration(user.NotificationDelay)),
+		ReadyAt:   time.Now().UTC().Add(time.Second * time.Duration(user.NotificationDelay)),
 		UserID:    user.ID,
 		MessageID: msgID,
 		ChatID:    chatID,

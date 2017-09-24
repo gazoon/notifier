@@ -81,7 +81,7 @@ func (s *Sender) saveToRegistry(ctx context.Context, notification *models.Notifi
 			UserID:     user.ID,
 			FromChatID: notification.ChatID,
 			MessageID:  messageID,
-			SentAt:     time.Now(),
+			SentAt:     time.Now().UTC(),
 		}
 		logger = logger.WithField("sent_notification", message)
 		logger.Info("Save message sent to the user to the registry")

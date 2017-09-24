@@ -74,7 +74,7 @@ func (mq *MongoQueue) GetNext() (*models.Notification, bool) {
 func (mq *MongoQueue) tryGetNext() (*models.Notification, bool) {
 	result := &models.Notification{}
 	err := mq.client.FindAndModify(context.Background(),
-		bson.M{"ready_at": bson.M{"$lt": time.Now()}},
+		bson.M{"ready_at": bson.M{"$lt": time.Now().UTC()}},
 		"ready_at",
 		mgo.Change{Remove: true},
 		result)
@@ -166,7 +166,7 @@ func (mq *InMemoryQueue) tryGetNext() (*models.Notification, bool) {
 		return nil, false
 	}
 	record := iterator.Value().(*models.Notification)
-	if record.ReadyAt.After(time.Now()) {
+	if record.ReadyAt.After(time.Now().UTC()) {
 		return nil, false
 	}
 	mq.storage.Remove(record)
