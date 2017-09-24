@@ -7,7 +7,7 @@ import (
 	"github.com/gazoon/bot_libs/logging"
 	"github.com/gazoon/bot_libs/mongo"
 	"github.com/pkg/errors"
-	"gopkg.in/mgo.v2/bson"
+	"github.com/globalsign/mgo/bson"
 )
 
 const (
